@@ -1,0 +1,592 @@
+---
+title: "Script_09_Association with gene expression"
+author: "Yunfeng"
+date: "6/7/2022"
+output: html_document
+---
+
+```{r}
+#set library path.
+.libPaths("~/researchdrive/yliu/BIOS_all/Functional interpretation of age-related X methylation/Rlibs")
+```
+
+
+```{r}
+#Load all necessary libraries.
+library(BBMRIomics)
+library(edgeR)
+library(irlba)
+library(sva)
+library(bacon)
+library(tidyverse)
+library(foreach)
+```
+
+```{r}
+#Load RNA-seq data and X-methylation data.
+bbmri.data(rnaSeqData_ReadCounts_BIOS_Freeze2_unrelated)
+load("Output_02_mvalues_chrX.RData")
+dim(counts)   # 56515  3559
+dim(mvalues_chrX) # 9777 4031
+
+#Select only the samples for which both RNA-seq and X-methylation data are available.
+counts <- counts[, na.omit(match(colnames(mvalues_chrX), colnames(counts)))]
+mvalues_chrX <- mvalues_chrX[, na.omit(match(colnames(counts), colnames(mvalues_chrX)))]
+# Note:the colnames of mvalues and counts are identical since they were matched in this step.
+
+#Finally, for some samples, the flowcell (on which assay chip the sample was measured) is NA. Remove these samples. 
+count.coldata <- colData(counts)
+X_meth.coldata <- colData(mvalues_chrX)
+idx <- which(is.na(count.coldata$flowcell_num) == TRUE)
+count.coldata <- count.coldata[-idx,]
+X_meth.coldata <- X_meth.coldata[-idx,]
+counts <- counts[,-idx]
+mvalues_chrX <- mvalues_chrX[,-idx]
+
+#After filtering, you should end up with 3131 samples
+dim(counts)
+dim(mvalues_chrX)
+
+# Add "flowcell_num" into mvalues_chrX object for later use.
+mvalues_chrX$flowcell_num <- count.coldata$flowcell_num
+
+#Load 830 protein-coding genes on X chromosome annoation
+load("Output_07_ensembl_genes_chrX.RData")
+
+# Select protein-coding genes with sufficient counts, then transform the counts into counts per million.
+protGenes<-GeneEns_chrX$gene_id
+idx_prot <- na.omit(match(protGenes,rownames(counts)))
+counts_chrX <- counts[idx_prot,]
+
+#Filter out lowly expressed genes (genes must have at least one count in 50% of samples).
+counts_chrX <- counts_chrX[rowSums(assay(counts_chrX)> 0) > 0.5 * ncol(counts), ] 
+dim(counts_chrX) # 512,3131
+
+#Create an object containing log2-counts per million, using functions from the edgeR package.
+log.cpm <- DGEList(counts = assay(counts_chrX))
+log.cpm <- calcNormFactors(log.cpm)
+log.cpm <- cpm(log.cpm, log = T)
+
+#Perform a rank-inverse normal (RIN) transformation for each gene.
+RIN <- function(x) {
+  y <- rank(x, NA)
+  y <- ppoints(y)[y]
+  y <- qnorm(y)
+  x[!is.na(x)] <- y
+  x
+}
+RIN.counts_chrX <- t(apply(log.cpm, 1, RIN))
+```
+
+
+```{r}
+# Spilit mvalues_chrX and RIN.counts_chrX based on sex
+id_females<-which(count.coldata$sex=="female")
+id_males<-which(count.coldata$sex=="male")
+mvalues_Xfemales<-mvalues_chrX[,id_females]
+mvalues_Xmales<-mvalues_chrX[,id_males]
+RIN.counts_Xfemales<-RIN.counts_chrX[,id_females]
+RIN.counts_Xmales<-RIN.counts_chrX[,id_males]
+
+# There are 1794 females and 1337 males separately.
+dim(mvalues_Xfemales)
+dim(mvalues_Xmales)
+dim(RIN.counts_Xfemales)
+dim(RIN.counts_Xmales)
+save(mvalues_Xfemales,mvalues_Xmales,RIN.counts_Xfemales,RIN.counts_Xmales,file="Output_09_TWAS_data.RData")
+
+# Create PCs of the RNA-seq data for Xfemales, Xmales.
+pc_Xfemales<- prcomp_irlba(t(RIN.counts_Xfemales), n=10)
+pc_Xmales<- prcomp_irlba(t(RIN.counts_Xmales), n=10)
+
+# Screenplot drawing (NB:the number of latent factor is 4)
+summary(pc_Xfemales)
+png("Output_09_screenplot_Xfemales.png")
+screeplot(pc_Xfemales,type = "lines")
+dev.off()
+
+summary(pc_Xmales)
+png("Output_09_screenplot_Xmales.png")
+screeplot(pc_Xmales,type = "lines")
+dev.off()
+```
+
+```{r}
+# Test the association between 208 aDMCs and 512 genes only in females.
+load(file = "Output_05_Catalogue_aDMCs_validated.RData")
+all.aDMCs<-c(rownames(df_aDMCs_female_specific_validated),rownames(df_aDMCs_male_specific_validated),rownames(df_aDMCs_both_sex_validated)) 
+mvalues_Xfemales_aDMCs<-mvalues_Xfemales[all.aDMCs,]
+Xfemales_aDMCs<-t(assay(mvalues_Xfemales_aDMCs))
+
+#### Performing TWAS using limma
+#Add the formula to the SummarizedExperiment.
+metadata(mvalues_Xfemales_aDMCs)$formula <- ~ sampling_age + biobank_id + CD8T_predicted + CD4T_predicted + NK_predicted + Bcell_predicted + Mono_predicted + sentrix_position + flowcell_num
+
+#Select covariates without NAs.
+covariates_Xfemales_aDMCs <-get_all_vars(metadata(mvalues_Xfemales_aDMCs)$formula, data=colData(mvalues_Xfemales_aDMCs))
+nas_Xfemales_aDMCs <- apply(covariates_Xfemales_aDMCs, 1, anyNA)
+mvalues_Xfemales_aDMCs <- mvalues_Xfemales_aDMCs[, !nas_Xfemales_aDMCs]
+design_Xfemales_aDMCs<- model.matrix(metadata(mvalues_Xfemales_aDMCs)$formula, data=colData(mvalues_Xfemales_aDMCs))
+
+## Estimate later factor by SVA
+## Full model:all covarites
+## null model:only includes the intercept
+design0_Xfemales_aDMCs = model.matrix(~ 1,data=colData(mvalues_Xfemales_aDMCs))
+svobj_Xfemales_aDMCs= sva(RIN.counts_Xfemales,design_Xfemales_aDMCs,design0_Xfemales_aDMCs,n.sv=4)
+sv_Xfemales_aDMCs <- as.data.frame(svobj_Xfemales_aDMCs$sv)
+colnames(sv_Xfemales_aDMCs) <- c('SV1', 'SV2', 'SV3', 'SV4')
+design_sv_Xfemales_aDMCs<-cbind(design_Xfemales_aDMCs,sv_Xfemales_aDMCs)
+
+# define an empty "cpg" object (this will be filled in later for each iteration of the TWAS).
+design_sv_Xfemales_aDMCs$cpg <- numeric(length = nrow(design_sv_Xfemales_aDMCs))
+
+# Move "cpg" column to second column in dataframe
+design_sv_Xfemales_aDMCs<-design_sv_Xfemales_aDMCs %>% relocate(cpg,.before =sampling_age)
+
+# Define TWAS using lmFit to model gene expression, using the methylation of CpGs as covariates.
+TWAS_Xfemales_aDMCs <- function(i){
+  
+  #Check progress
+  print(paste0("CpG ", i, ": ", rownames(mvalues_Xfemales_aDMCs)[i]))
+  
+  #Select 1 CpG, and add it to the design matrix as the primary variable.
+  cpg <- Xfemales_aDMCs[,i]
+  design_sv_Xfemales_aDMCs[,2] <- cpg
+  
+  #Run the TWAS for this CpG
+  twas <- tryCatch({
+    fit_Xfemales <- lmFit(RIN.counts_Xfemales, design_sv_Xfemales_aDMCs)}, error = identity)
+  if(is.null(twas$message)){
+    
+  #Extract the beta-estimates and p-values, and save them as a dataframe.
+tstat_Xfemales <-fit_Xfemales$coef/fit_Xfemales$stdev.unscaled/fit_Xfemales$sigma
+pval_Xfemales<-2*pt(-abs(tstat_Xfemales),fit_Xfemales$df.residual)
+dat_Xfemales<- as.data.frame(cbind(fit_Xfemales$coefficients[,2],tstat_Xfemales[,2],pval_Xfemales[,2]))
+colnames(dat_Xfemales) <- c("effectsize","t-satistics","p.value")
+  } 
+  else {
+    #make output structure a dataframe.
+    dat_Xfemales <- data.frame("CpG_name" = rownames(mvalues_Xfemales_aDMCs)[1], "Error" = "Didn't converge")
+  }
+  return(dat_Xfemales)
+}
+```
+
+```{r}
+# Run TWAS for 208 aDMCs in females.
+idx_females_aDMCs <- 1:ncol(Xfemales_aDMCs)
+TWAS.Xfemales_aDMCs <- foreach(i = idx_females_aDMCs, .errorhandling = 'stop') %dopar% TWAS_Xfemales_aDMCs(i)
+save(TWAS.Xfemales_aDMCs,file ="./Output_09_TWAS_Xfemales_aDMCs.RData")
+```
+
+```{r}
+#Split the output into beta-values and p-values for TWAS_females object.
+idx_TWAS_females_aDMCs <- 1:length(TWAS.Xfemales_aDMCs)
+
+#Effect sizes.
+es.females.aDMCs <- foreach(i = idx_TWAS_females_aDMCs, .combine = cbind) %dopar% TWAS.Xfemales_aDMCs[[i]][,1]
+dim(es.females.aDMCs)  # 512 208
+rownames(es.females.aDMCs) <- rownames(RIN.counts_Xfemales)
+colnames(es.females.aDMCs) <- colnames(Xfemales_aDMCs)
+
+#t-statistics.
+t.females.aDMCs <- foreach(i = idx_TWAS_females_aDMCs, .combine = cbind) %dopar% TWAS.Xfemales_aDMCs[[i]][,2]
+dim(t.females.aDMCs)   # 512 208
+rownames(t.females.aDMCs) <- rownames(RIN.counts_Xfemales)
+colnames(t.females.aDMCs) <- colnames(Xfemales_aDMCs)
+save(es.females.aDMCs, file = "Output_09_TWAS_females_effect_sizes_aDMCs.RData")
+save(t.females.aDMCs, file = "Output_09_TWAS_females_t_statistics_aDMCs.RData")
+```
+
+# Run bacon
+# NB: bacon will be run separately for each CpG. This is because limma was run using a separate model for each CpG, using that CpG to predict the expression of all 512 genes. In other words, each CpG represents a single related set of t-statistics, generated from the same linear model.
+```{r}
+## Correct bias and inflation for TWAS_females results
+# load("Output_09_TWAS_females_effect_sizes_aDMCs.RData")
+# load("Output_09_TWAS_females_t_statistics_aDMCs.RData")
+set.seed(1)
+bc_Xfemales_aDMCs<- bacon(teststatistics =t.females.aDMCs)
+
+#Extract the BACON-adjusted t-statistics and p-values
+tstats_Xfemales_aDMCs <-tstat(bc_Xfemales_aDMCs)
+pvals_Xfemales_aDMCs <-pval(bc_Xfemales_aDMCs)
+
+#Inspect inflations and biases.
+tiff("Output_09_inflations_females_aDMC.tiff", units="in", width=8, height=6, res=600,compression = 'lzw')
+inflations_females_aDMCs <- inflation(bc_Xfemales_aDMCs)
+summary(inflations_females_aDMCs)
+hist(inflations_females_aDMCs, 100,main = "aDMCs inflation in females")
+dev.off()
+
+tiff("Output_09_biases_females_aDMC.tiff", units="in", width=8, height=6, res=600,compression = 'lzw')
+biases_females_aDMCs <- bias(bc_Xfemales_aDMCs)
+summary(biases_females_aDMCs)
+hist(biases_females_aDMCs, 100,main = "aDMCs bias in females")
+dev.off() 
+
+# Save bacon output 
+save(tstats_Xfemales_aDMCs,file ="Output_09_bacon_females_t_statistics_aDMCs.RData") 
+save(pvals_Xfemales_aDMCs,file ="Output_09_bacon_females_pvals_aDMCs.RData") 
+```
+
+
+```{r}
+# Test the association between 208 aDMCs and 512 genes only in males.
+mvalues_Xmales_aDMCs<-mvalues_Xmales[all.aDMCs,]
+Xmales_aDMCs<-t(assay(mvalues_Xmales_aDMCs))
+#### Performing TWAS using limma
+#Add the formula to the SummarizedExperiment.
+metadata(mvalues_Xmales_aDMCs)$formula <- ~ sampling_age + biobank_id + CD8T_predicted + CD4T_predicted + NK_predicted + Bcell_predicted + Mono_predicted + sentrix_position + flowcell_num
+
+#Select covariates without NAs.
+covariates_Xmales_aDMCs <-get_all_vars(metadata(mvalues_Xmales_aDMCs)$formula, data=colData(mvalues_Xmales_aDMCs))
+nas_Xmales_aDMCs <- apply(covariates_Xmales_aDMCs, 1, anyNA)
+mvalues_Xmales_aDMCs <- mvalues_Xmales_aDMCs[, !nas_Xmales_aDMCs]
+design_Xmales_aDMCs<- model.matrix(metadata(mvalues_Xmales_aDMCs)$formula, data=colData(mvalues_Xmales_aDMCs))
+
+## Estimate later factor by SVA
+## Full model:all covarites
+## null model:only includes the intercept
+design0_Xmales_aDMCs = model.matrix(~ 1,data=colData(mvalues_Xmales_aDMCs))
+svobj_Xmales_aDMCs= sva(RIN.counts_Xmales,design_Xmales_aDMCs,design0_Xmales_aDMCs,n.sv=4)
+sv_Xmales_aDMCs <- as.data.frame(svobj_Xmales_aDMCs$sv)
+colnames(sv_Xmales_aDMCs) <- c('SV1', 'SV2', 'SV3', 'SV4')
+design_sv_Xmales_aDMCs<-cbind(design_Xmales_aDMCs,sv_Xmales_aDMCs)
+
+# define an empty "cpg" object (this will be filled in later for each iteration of the TWAS).
+design_sv_Xmales_aDMCs$cpg <- numeric(length = nrow(design_sv_Xmales_aDMCs))
+
+# Move "cpg" column to second column in dataframe
+design_sv_Xmales_aDMCs<-design_sv_Xmales_aDMCs %>% relocate(cpg,.before =sampling_age)
+
+# Define TWAS using lmFit to model gene expression, using the methylation of CpGs as covariates.
+TWAS_Xmales_aDMCs <- function(i){
+  
+  #Check progress
+  print(paste0("CpG ", i, ": ", rownames(mvalues_Xmales_aDMCs)[i]))
+  
+  #Select 1 CpG, and add it to the design matrix as the primary variable.
+  cpg <- Xmales_aDMCs[,i]
+  design_sv_Xmales_aDMCs[,2] <- cpg
+  
+  #Run the TWAS for this CpG
+  twas <- tryCatch({
+    fit_Xmales <- lmFit(RIN.counts_Xmales, design_sv_Xmales_aDMCs)}, error = identity)
+  if(is.null(twas$message)){
+    
+  #Extract the beta-estimates and p-values, and save them as a dataframe.
+tstat_Xmales <-fit_Xmales$coef/fit_Xmales$stdev.unscaled/fit_Xmales$sigma
+pval_Xmales<-2*pt(-abs(tstat_Xmales),fit_Xmales$df.residual)
+dat_Xmales<- as.data.frame(cbind(fit_Xmales$coefficients[,2],tstat_Xmales[,2],pval_Xmales[,2]))
+colnames(dat_Xmales) <- c("effectsize","t-satistics","p.value")
+  } 
+  else {
+    #make output structure a dataframe.
+    dat_Xmales <- data.frame("CpG_name" = rownames(mvalues_Xmales_aDMCs)[1], "Error" = "Didn't converge")
+  }
+  return(dat_Xmales)
+}
+```
+
+```{r}
+# Run TWAS for 208 aDMCs in males.
+idx_males_aDMCs <- 1:ncol(Xmales_aDMCs)
+TWAS.Xmales_aDMCs <- foreach(i = idx_males_aDMCs, .errorhandling = 'stop') %dopar% TWAS_Xmales_aDMCs(i)
+save(TWAS.Xmales_aDMCs,file ="./Output_09_TWAS_Xmales_aDMCs.RData")
+```
+
+
+```{r}
+#Split the output into beta-values and p-values for TWAS_males object.
+idx_TWAS_males_aDMCs <- 1:length(TWAS.Xmales_aDMCs)
+
+#Effect sizes.
+es.males.aDMCs <- foreach(i = idx_TWAS_males_aDMCs, .combine = cbind) %dopar% TWAS.Xmales_aDMCs[[i]][,1]
+dim(es.males.aDMCs)  # 512 1810
+rownames(es.males.aDMCs) <- rownames(RIN.counts_Xmales)
+colnames(es.males.aDMCs) <- colnames(Xmales_aDMCs)
+
+#t-statistics.
+t.males.aDMCs <- foreach(i = idx_TWAS_males_aDMCs, .combine = cbind) %dopar% TWAS.Xmales_aDMCs[[i]][,2]
+dim(t.males.aDMCs)
+rownames(t.males.aDMCs) <- rownames(RIN.counts_Xmales)
+colnames(t.males.aDMCs) <- colnames(Xmales_aDMCs)
+save(es.males.aDMCs, file = "Output_09_TWAS_males_effect_sizes_aDMCs.RData")
+save(t.males.aDMCs, file = "Output_09_TWAS_males_t_statistics_aDMCs.RData")
+```
+
+
+```{r}
+## Correct bias and inflation for TWAS_males results
+# load("Output_09_TWAS_males_effect_sizes_aDMCs.RData")
+# load("Output_09_TWAS_males_t_statistics_aDMCs.RData")
+set.seed(1)
+bc_Xmales_aDMCs<- bacon(teststatistics =t.males.aDMCs)
+
+#Extract the BACON-adjusted t-statistics and p-values
+tstats_Xmales_aDMCs <-tstat(bc_Xmales_aDMCs)
+pvals_Xmales_aDMCs <-pval(bc_Xmales_aDMCs)
+
+#Inspect inflations and biases.
+tiff("Output_09_inflations_males_aDMCs.tiff", units="in", width=8, height=6, res=600,compression = 'lzw')
+inflations_males_aDMCs <- inflation(bc_Xmales_aDMCs)
+summary(inflations_males_aDMCs)
+hist(inflations_males_aDMCs, 100,main = "aDMCs inflation in males")
+dev.off()
+
+tiff("Output_09_biases_males_aDMCs.tiff", units="in", width=8, height=6, res=600,compression = 'lzw')
+biases_males_aDMCs <- bias(bc_Xmales_aDMCs)
+summary(biases_males_aDMCs)
+hist(biases_males_aDMCs, 100,main = "aDMCs bias in males")
+dev.off()
+ 
+# Save bacon output 
+save(tstats_Xmales_aDMCs,file ="Output_09_bacon_males_t_statistics_aDMCs.RData")
+save(pvals_Xmales_aDMCs,file ="Output_09_bacon_males_pvals_aDMCs.RData")  
+```
+
+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+```{r}
+# Test the association between 566 aVMCs and 512 genes only in females
+load(file = "Output_06_Catalogue_aVMCs_validated.RData")
+all.aVMCs<-c(rownames(dat_aVMCs_females_validated),rownames(dat_aVMCs_males_validated)) 
+mvalues_Xfemales_aVMCs<-mvalues_Xfemales[all.aVMCs,]
+Xfemales_aVMCs<-t(assay(mvalues_Xfemales_aVMCs))
+
+#### Performing TWAS using limma
+#Add the formula to the SummarizedExperiment.
+metadata(mvalues_Xfemales_aVMCs)$formula <- ~ sampling_age + biobank_id + CD8T_predicted + CD4T_predicted + NK_predicted + Bcell_predicted + Mono_predicted + sentrix_position + flowcell_num
+
+#Select covariates without NAs.
+covariates_Xfemales_aVMCs <-get_all_vars(metadata(mvalues_Xfemales_aVMCs)$formula, data=colData(mvalues_Xfemales_aVMCs))
+nas_Xfemales_aVMCs <- apply(covariates_Xfemales_aVMCs, 1, anyNA)
+mvalues_Xfemales_aVMCs <- mvalues_Xfemales_aVMCs[, !nas_Xfemales_aVMCs]
+design_Xfemales_aVMCs<- model.matrix(metadata(mvalues_Xfemales_aVMCs)$formula, data=colData(mvalues_Xfemales_aVMCs))
+
+## Estimate later factor by SVA
+## Full model:all covarites
+## null model:only includes the intercept
+design0_Xfemales_aVMCs = model.matrix(~ 1,data=colData(mvalues_Xfemales_aVMCs))
+svobj_Xfemales_aVMCs= sva(RIN.counts_Xfemales,design_Xfemales_aVMCs,design0_Xfemales_aVMCs,n.sv=4)
+sv_Xfemales_aVMCs <- as.data.frame(svobj_Xfemales_aVMCs$sv)
+colnames(sv_Xfemales_aVMCs) <- c('SV1', 'SV2', 'SV3', 'SV4')
+design_sv_Xfemales_aVMCs<-cbind(design_Xfemales_aVMCs,sv_Xfemales_aVMCs)
+
+# define an empty "cpg" object (this will be filled in later for each iteration of the TWAS).
+design_sv_Xfemales_aVMCs$cpg <- numeric(length = nrow(design_sv_Xfemales_aVMCs))
+
+# Move "cpg" column to second column in dataframe
+design_sv_Xfemales_aVMCs<-design_sv_Xfemales_aVMCs %>% relocate(cpg,.before =sampling_age)
+
+# Define TWAS using lmFit to model gene expression, using the methylation of CpGs as covariates.
+TWAS_Xfemales_aVMCs <- function(i){
+  
+  #Check progress
+  print(paste0("CpG ", i, ": ", rownames(mvalues_Xfemales_aVMCs)[i]))
+  
+  #Select 1 CpG, and add it to the design matrix as the primary variable.
+  cpg <- Xfemales_aVMCs[,i]
+  design_sv_Xfemales_aVMCs[,2] <- cpg
+  
+  #Run the TWAS for this CpG
+  twas <- tryCatch({
+    fit_Xfemales <- lmFit(RIN.counts_Xfemales, design_sv_Xfemales_aVMCs)}, error = identity)
+  if(is.null(twas$message)){
+    
+  #Extract the beta-estimates and p-values, and save them as a dataframe.
+tstat_Xfemales <-fit_Xfemales$coef/fit_Xfemales$stdev.unscaled/fit_Xfemales$sigma
+pval_Xfemales<-2*pt(-abs(tstat_Xfemales),fit_Xfemales$df.residual)
+dat_Xfemales_aVMCs<- as.data.frame(cbind(fit_Xfemales$coefficients[,2],tstat_Xfemales[,2],pval_Xfemales[,2]))
+colnames(dat_Xfemales_aVMCs) <- c("effectsize","t-satistics","p.value")
+  } 
+  else {
+    #make output structure a dataframe.
+    dat_Xfemales_aVMCs <- data.frame("CpG_name" = rownames(mvalues_Xfemales_aVMCs)[1], "Error" = "Didn't converge")
+  }
+  return(dat_Xfemales_aVMCs)
+}
+```
+
+```{r}
+# Run TWAS for 566 aVMCs in females.
+idx_females_aVMCs <- 1:ncol(Xfemales_aVMCs)
+TWAS.Xfemales_aVMCs <- foreach(i = idx_females_aVMCs, .errorhandling = 'stop') %dopar% TWAS_Xfemales_aVMCs(i)
+save(TWAS.Xfemales_aVMCs,file ="./Output_09_TWAS_Xfemales_aVMCs.RData")
+```
+
+```{r}
+#Split the output into beta-values and p-values for TWAS_females_aVMCs object.
+idx_TWAS_females_aVMCs <- 1:length(TWAS.Xfemales_aVMCs)
+
+#Effect sizes.
+es.females.aVMCs <- foreach(i = idx_TWAS_females_aVMCs, .combine = cbind) %dopar% TWAS.Xfemales_aVMCs[[i]][,1]
+dim(es.females.aVMCs)  # 512 566
+rownames(es.females.aVMCs) <- rownames(RIN.counts_Xfemales)
+colnames(es.females.aVMCs) <- colnames(Xfemales_aVMCs)
+
+#t-statistics.
+t.females.aVMCs <- foreach(i = idx_TWAS_females_aVMCs, .combine = cbind) %dopar% TWAS.Xfemales_aVMCs[[i]][,2]
+dim(t.females.aVMCs)
+rownames(t.females.aVMCs) <- rownames(RIN.counts_Xfemales)
+colnames(t.females.aVMCs) <- colnames(Xfemales_aVMCs)
+save(es.females.aVMCs, file = "Output_09_TWAS_females_effect_sizes_aVMCs.RData")
+save(t.females.aVMCs, file = "Output_09_TWAS_females_t_statistics_aVMCs.RData")
+```
+
+```{r}
+## Correct bias and inflation for TWAS_females_aVMCs results
+# load("Output_09_TWAS_females_effect_sizes_aVMCs.RData")
+# load("Output_09_TWAS_females_t_statistics_aVMCs.RData")
+set.seed(1)
+bc_Xfemales_aVMCs<- bacon(teststatistics =t.females.aVMCs)
+
+#Extract the BACON-adjusted t-statistics and p-values
+tstats_Xfemales_aVMCs <-tstat(bc_Xfemales_aVMCs)
+pvals_Xfemales_aVMCs <-pval(bc_Xfemales_aVMCs)
+
+#Inspect inflations and biases.
+tiff("Output_09_inflations_females_aVMCs.tiff", units="in", width=8, height=6, res=600,compression = 'lzw')
+inflations_females_aVMCs <- inflation(bc_Xfemales_aVMCs)
+summary(inflations_females_aVMCs)
+hist(inflations_females_aVMCs, 100,main = "aVMCs inflation in females")
+dev.off()
+
+tiff("Output_09_biases_females_aVMCs.tiff", units="in", width=8, height=6, res=600,compression = 'lzw')
+biases_females_aVMCs <- bias(bc_Xfemales_aVMCs)
+summary(biases_females_aVMCs)
+hist(biases_females_aVMCs, 100, main = "aVMCs bias in females")
+dev.off() 
+
+# Save bacon output 
+save(tstats_Xfemales_aVMCs,file ="Output_09_bacon_females_aVMCs_t_statistics.RData") 
+save(pvals_Xfemales_aVMCs,file ="Output_09_bacon_females_aVMCs_pvals.RData")
+```
+
+```{r}
+# Test the association between 566 aVMCs and 512 genes only in males
+mvalues_Xmales_aVMCs<-mvalues_Xmales[all.aVMCs,]
+Xmales_aVMCs<-t(assay(mvalues_Xmales_aVMCs))
+
+#### Performing TWAS using limma
+#Add the formula to the SummarizedExperiment.
+metadata(mvalues_Xmales_aVMCs)$formula <- ~ sampling_age + biobank_id + CD8T_predicted + CD4T_predicted + NK_predicted + Bcell_predicted + Mono_predicted + sentrix_position + flowcell_num
+
+#Select covariates without NAs.
+covariates_Xmales_aVMCs <-get_all_vars(metadata(mvalues_Xmales_aVMCs)$formula, data=colData(mvalues_Xmales_aVMCs))
+nas_Xmales_aVMCs <- apply(covariates_Xmales_aVMCs, 1, anyNA)
+mvalues_Xmales_aVMCs <- mvalues_Xmales_aVMCs[, !nas_Xmales_aVMCs]
+design_Xmales_aVMCs<- model.matrix(metadata(mvalues_Xmales_aVMCs)$formula, data=colData(mvalues_Xmales_aVMCs))
+
+## Estimate later factor by SVA
+## Full model:all covarites
+## null model:only includes the intercept
+design0_Xmales_aVMCs = model.matrix(~ 1,data=colData(mvalues_Xmales_aVMCs))
+svobj_Xmales_aVMCs= sva(RIN.counts_Xmales,design_Xmales_aVMCs,design0_Xmales_aVMCs,n.sv=4)
+sv_Xmales_aVMCs <- as.data.frame(svobj_Xmales_aVMCs$sv)
+colnames(sv_Xmales_aVMCs) <- c('SV1', 'SV2', 'SV3', 'SV4')
+design_sv_Xmales_aVMCs<-cbind(design_Xmales_aVMCs,sv_Xmales_aVMCs)
+
+# define an empty "cpg" object (this will be filled in later for each iteration of the TWAS).
+design_sv_Xmales_aVMCs$cpg <- numeric(length = nrow(design_sv_Xmales_aVMCs))
+
+# Move "cpg" column to second column in dataframe
+design_sv_Xmales_aVMCs<-design_sv_Xmales_aVMCs %>% relocate(cpg,.before =sampling_age)
+
+# Define TWAS using lmFit to model gene expression, using the methylation of CpGs as covariates.
+TWAS_Xmales_aVMCs <- function(i){
+  
+  #Check progress
+  print(paste0("CpG ", i, ": ", rownames(mvalues_Xmales_aVMCs)[i]))
+  
+  #Select 1 CpG, and add it to the design matrix as the primary variable.
+  cpg <- Xmales_aVMCs[,i]
+  design_sv_Xmales_aVMCs[,2] <- cpg
+  
+  #Run the TWAS for this CpG
+  twas <- tryCatch({
+    fit_Xmales <- lmFit(RIN.counts_Xmales, design_sv_Xmales_aVMCs)}, error = identity)
+  if(is.null(twas$message)){
+    
+  #Extract the beta-estimates and p-values, and save them as a dataframe.
+tstat_Xmales <-fit_Xmales$coef/fit_Xmales$stdev.unscaled/fit_Xmales$sigma
+pval_Xmales<-2*pt(-abs(tstat_Xmales),fit_Xmales$df.residual)
+dat_Xmales_aVMCs<- as.data.frame(cbind(fit_Xmales$coefficients[,2],tstat_Xmales[,2],pval_Xmales[,2]))
+colnames(dat_Xmales_aVMCs) <- c("effectsize","t-satistics","p.value")
+  } 
+  else {
+    #make output structure a dataframe.
+    dat_Xmales_aVMCs <- data.frame("CpG_name" = rownames(mvalues_Xmales_aVMCs)[1], "Error" = "Didn't converge")
+  }
+  return(dat_Xmales_aVMCs)
+}
+```
+
+```{r}
+# Run TWAS for 95 aVMCs in males.
+idx_males_aVMCs <- 1:ncol(Xmales_aVMCs)
+TWAS.Xmales_aVMCs <- foreach(i = idx_males_aVMCs, .errorhandling = 'stop') %dopar% TWAS_Xmales_aVMCs(i)
+save(TWAS.Xmales_aVMCs,file ="./Output_09_TWAS_Xmales_aVMCs.RData")
+```
+
+
+```{r}
+#Split the output into beta-values and p-values for TWAS_males_aVMCs object.
+idx_TWAS_males_aVMCs <- 1:length(TWAS.Xmales_aVMCs)
+
+#Effect sizes.
+es.males.aVMCs <- foreach(i = idx_TWAS_males_aVMCs, .combine = cbind) %dopar% TWAS.Xmales_aVMCs[[i]][,1]
+dim(es.males.aVMCs)  # 512 566
+rownames(es.males.aVMCs) <- rownames(RIN.counts_Xmales)
+colnames(es.males.aVMCs) <- colnames(Xmales_aVMCs)
+
+#t-statistics.
+t.males.aVMCs <- foreach(i = idx_TWAS_males_aVMCs, .combine = cbind) %dopar% TWAS.Xmales_aVMCs[[i]][,2]
+dim(t.males.aVMCs) # 512 566
+rownames(t.males.aVMCs) <- rownames(RIN.counts_Xmales)
+colnames(t.males.aVMCs) <- colnames(Xmales_aVMCs)
+save(es.males.aVMCs, file = "Output_09_TWAS_males_effect_sizes_aVMCs.RData")
+save(t.males.aVMCs, file = "Output_09_TWAS_males_t_statistics_aVMCs.RData")
+```
+
+
+```{r}
+## Correct bias and inflation for TWAS_males_aVMCs results
+# load("Output_09_TWAS_males_aVMCs_effect_sizes.RData")
+# load("Output_09_TWAS_males_aVMCs_t_statistics.RData")
+set.seed(1)
+bc_Xmales_aVMCs<- bacon(teststatistics =t.males.aVMCs)
+
+#Extract the BACON-adjusted t-statistics and p-values
+tstats_Xmales_aVMCs <-tstat(bc_Xmales_aVMCs)
+pvals_Xmales_aVMCs <-pval(bc_Xmales_aVMCs)
+
+#Inspect inflations and biases.
+tiff("Output_09_inflations_males_aVMCs.tiff", units="in", width=8, height=6, res=600,compression = 'lzw')
+inflations_males_aVMCs <- inflation(bc_Xmales_aVMCs)
+summary(inflations_males_aVMCs)
+hist(inflations_males_aVMCs, 100, main = "aVMCs inflations in females")
+dev.off()
+
+tiff("Output_09_biases_males_aVMCs.tiff", units="in", width=8, height=6, res=600,compression = 'lzw')
+biases_males_aVMCs <- bias(bc_Xmales_aVMCs)
+summary(biases_males_aVMCs)
+hist(biases_males_aVMCs, 100, main = "aVMCs bias in females")
+dev.off() 
+
+# Save bacon output 
+save(tstats_Xmales_aVMCs,file ="Output_09_bacon_males_aVMCs_t_statistics.RData") 
+save(pvals_Xmales_aVMCs,file ="Output_09_bacon_males_aVMCs_pvals.RData") 
+```
+
+
+
+
+
+
+
+
+
+
+
+

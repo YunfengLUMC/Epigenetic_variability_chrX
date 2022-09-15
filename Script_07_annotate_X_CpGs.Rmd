@@ -1,0 +1,126 @@
+---
+title: "annotate_450k_X_CpGs"
+author: "Yunfeng"
+date: "5/30/2022"
+output: html_document
+---
+
+```{r}
+#set library path.
+.libPaths("~/researchdrive/yliu/BIOS_all/Functional interpretation of age-related X methylation/Rlibs")
+```
+
+
+```{r}
+#Load all necessary libraries.
+library(EnsDb.Hsapiens.v75)
+library(rtracklayer)
+library(FDb.InfiniumMethylation.hg19)
+library(AnnotationHub)
+library(ph525x)
+library(data.table)
+```
+
+```{r}
+#Load data.
+load(file ="./Output/Output_01_chrX_chrY.RData")
+
+#Make a GRanges object containing features of all 450K CpGs.
+ann450K <- features(FDb.InfiniumMethylation.hg19)
+
+#Select only the X chromosome CpGs which were measured in the BIOS data.
+mvalues_chrX<-cbind(mvalues_Xfemales,mvalues_Xmales)
+dim(mvalues_chrX) # 9777 4031
+
+ann450K_chrX <- ann450K[rownames(mvalues_chrX)]
+
+#Remove  metadata and strand information, then sort the object.
+ann450K_chrX <- ann450K_chrX[,NULL]
+strand(ann450K_chrX) <- "*"
+ann450K_chrX <- sort(sortSeqlevels(ann450K_chrX))
+
+#Add the chromosome names to the metadata.
+ann450K_chrX$Chromosome <- factor(seqnames(ann450K_chrX))
+ann450K_chrX
+```
+
+```{r}
+# Open ensembl database.
+edb75 <- EnsDb.Hsapiens.v75
+# Only keep protein-coding genes.
+GeneEns <- genes(edb75, filter = GeneBiotypeFilter("protein_coding"))
+GeneEns <- keepStandardChromosomes(GeneEns, pruning.mode = "coarse")
+GeneEns <- sort(sortSeqlevels(GeneEns))
+values(GeneEns)[,c(2,4)] <- NULL
+GeneEns
+
+# keep protein-coding genes on X chromosome
+seqlevels(GeneEns) <- gsub("X", "chrX", seqlevels(GeneEns))
+GeneEns_chrX <- keepSeqlevels(GeneEns,"chrX", pruning.mode = "coarse")
+```
+
+```{r}
+#Change the genome nomenclature of GeneEns_chrX from GRCh37 to hg19
+genome(GeneEns_chrX)<-genome(ann450K_chrX) 
+ann450K_chrX
+GeneEns_chrX
+```
+
+
+```{r}
+#Annotate CGIs
+#Retrieve CpG islands from the UCSC genome browser.
+mySession = browserSession("UCSC")
+genome(mySession) <- "hg19"
+CpGislands.raw <- getTable(ucscTableQuery(mySession, track="CpG Islands",table="cpgIslandExt"))
+CGI.gr <- GRanges(CpGislands.raw$chrom, IRanges(CpGislands.raw$chromStart+1, CpGislands.raw$chromEnd), name=CpGislands.raw$name)
+CGI.gr <- keepStandardChromosomes(CGI.gr, pruning.mode = "coarse")
+
+#Add CGI annotation (also including shores (within 2000 bp from CGI)).
+#Shores start
+shores1 <- CGI.gr
+shores2 <- CGI.gr
+start(shores1) <- start(CGI.gr) - 2000
+end(shores1) <- start(CGI.gr)
+
+#Shores end
+end(shores2) <- end(CGI.gr) + 2000
+start(shores2) <- end(CGI.gr) 
+shores <- c(shores1, shores2)
+
+#Add the CGI annotations to the 450K CpGs.
+
+#Non-CGI
+ann450K_chrX$CGI_Feature <- rep("non-CGI")
+
+#Shore
+OL.sho <- as.matrix(findOverlaps(shores,ann450K_chrX))[,2]
+OL.sho <- unique(OL.sho)
+ann450K_chrX[OL.sho,]$CGI_Feature <- "Shore"
+
+#CGI
+OL.cgi <- as.matrix(findOverlaps(CGI.gr, ann450K_chrX))[,2]
+OL.cgi <- unique(OL.cgi)
+ann450K_chrX[OL.cgi,]$CGI_Feature <- "CGI"
+
+#Turn CGI features into a factor variable.
+ann450K_chrX$CGI_Feature <- factor(ann450K_chrX$CGI_Feature, levels = c("CGI", "Shore", "non-CGI"))
+
+ann450K_chrX
+```
+
+
+```{r}
+# XCI annotation based on TSS.
+load(file="Input_02_TSS.XCI.Status.RData")
+XCI.annotation<-XCI.annotation[names(ann450K_chrX),]
+ann450K_chrX$XCI.Status<-XCI.annotation$TSS.Status
+ann450K_chrX$Distance<-XCI.annotation$Distance
+```
+
+
+```{r}
+#save the files.
+save(GeneEns_chrX, file = "Output/Output_07/Output_07_ensembl_genes_chrX.RData")
+save(ann450K_chrX, file = "Output/Output_07/Output_07_450K_chrX_annotation.RData")
+```

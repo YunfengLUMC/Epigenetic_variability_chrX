@@ -1,0 +1,274 @@
+---
+title: "Script_10_TWAS_analysis"
+author: "Yunfeng"
+date: "6/7/2022"
+output: html_document
+---
+```{r}
+#set library path.
+.libPaths("~/researchdrive/yliu/BIOS_all/Functional interpretation of age-related X methylation/Rlibs")
+```
+
+
+```{r}
+#Load all necessary libraries.
+library(clusterProfiler)
+library(org.Hs.eg.db)
+library(tidyverse)
+#Load a custom-made function, called heatmap.3
+load("Input_10_heatmap_function.RData")
+```
+
+```{r}
+# Load the catologue of significant CpGs.
+load("Output_05_Catalogue_aDMCs_validated.RData")
+load("Output_06_Catalogue_aVMCs_validated.RData")
+
+
+# Load TWAS data
+load("Output_09_TWAS_data.RData")
+
+#Load the bacon-adjusted TWAS output
+load("Output_09_bacon_females_t_statistics_aDMCs.RData")
+load("Output_09_bacon_females_pvals_aDMCs.RData")
+load("Output_09_bacon_males_t_statistics_aDMCs.RData")
+load("Output_09_bacon_males_pvals_aDMCs.RData")
+load("Output_09_bacon_females_aVMCs_t_statistics.RData")
+load("Output_09_bacon_females_aVMCs_pvals.RData")
+load("Output_09_bacon_males_aVMCs_t_statistics.RData")
+load("Output_09_bacon_males_aVMCs_pvals.RData")
+
+#Load the genomic ranges for the genes and the annotation for all 450K CpGs from the array.
+load("Output_07_ensembl_genes_chrX.RData")
+load("Output_07_450K_chrX_annotation.RData")
+
+#Make the seqname of ann450k is the same as GeneEns.
+seqlevels(ann450K_chrX) <- gsub("X", "chrX", seqnames(ann450K_chrX))
+
+#In the TWAS, genes with extremely low expression were filtered out. Remove the same genes from GeneEns.
+idx <- match(rownames(RIN.counts_Xfemales), names(GeneEns_chrX))
+GeneEns_chrX <- GeneEns_chrX[idx]
+```
+
+# Test association between 208 aDMCs and 512 genes in 1798 females.
+```{r}
+# Creat GRanges object for all validated aDMCs.
+ann450K_validated_aDMCs<-ann450K_chrX[colnames(pvals_Xfemales_aDMCs)]
+
+# Make an empty dataframe for storing the gene-cpg distances.
+distance_females_aDMCs <- matrix(NaN, nrow = nrow(pvals_Xfemales_aDMCs), ncol = ncol(pvals_Xfemales_aDMCs), dimnames = list(rownames(pvals_Xfemales_aDMCs), colnames(pvals_Xfemales_aDMCs)))
+
+# Calculate the distance between a gene-cpg pair.
+ for(i in 1:ncol(pvals_Xfemales_aDMCs)){
+    distance_females_aDMCs[,i]<-distance(ann450K_validated_aDMCs[colnames(pvals_Xfemales_aDMCs)][i],GeneEns_chrX,ignore.strand = T)
+ }
+
+# Adjust the p-values for multiple testing, using the Bonferroni method.
+padj.females.aDMCs<-matrix(p.adjust(pvals_Xfemales_aDMCs,method = "bonf"),nrow = nrow(pvals_Xfemales_aDMCs), ncol = ncol(pvals_Xfemales_aDMCs), dimnames = list(rownames(pvals_Xfemales_aDMCs), colnames(pvals_Xfemales_aDMCs))) 
+
+#Save the number of associations for each gene and cpg.
+# I. Check if female-specific aDMCs are associated with gene expression
+fs_padj.females.aDMCs<-padj.females.aDMCs[,rownames(df_aDMCs_female_specific_validated)]
+fs_gene_assoc_aDMCs <- matrix(NaN, nrow = nrow(fs_padj.females.aDMCs), ncol = 1, dimnames = list(rownames(fs_padj.females.aDMCs), "Number of associations"))
+fs_gene_assoc_aDMCs[,1] <- apply(fs_padj.females.aDMCs, 1, function(x){length(which(x <= 0.05))})
+  
+fs_cpg_assoc_aDMCs <- matrix(NaN, nrow = ncol(fs_padj.females.aDMCs), ncol = 1, dimnames = list(colnames(fs_padj.females.aDMCs), "Number of associations"))
+fs_cpg_assoc_aDMCs[,1] <- apply(fs_padj.females.aDMCs, 2, function(x){length(which(x <= 0.05))})
+  
+#Order the hits by number of associations to find the genes/cpgs with the most associations.
+fs_gene_assoc_aDMCs <- as.data.frame(fs_gene_assoc_aDMCs)
+fs_gene_assoc_aDMCs$`Associating CpGs` <- apply(fs_padj.females.aDMCs, 1, function(x){gsub(" ", ",", paste(names(which(x <= 0.05)), collapse = " "))})
+fs_gene_assoc_aDMCs <- fs_gene_assoc_aDMCs[order(fs_gene_assoc_aDMCs$`Number of associations`, decreasing = T),]  
+  
+fs_cpg_assoc_aDMCs <- as.data.frame(fs_cpg_assoc_aDMCs)
+fs_cpg_assoc_aDMCs$`Associating genes` <- apply(fs_padj.females.aDMCs, 2, function(x){gsub(" ", ",", paste(names(which(x <= 0.05)), collapse = " "))})
+fs_cpg_assoc_aDMCs <- fs_cpg_assoc_aDMCs[order(fs_cpg_assoc_aDMCs$`Number of associations`, decreasing = T),]
+# NB: After multiple testing correction,no fs aDMCs associated with gene expression.
+
+# II. Check if both-sex aDMCs are associated with gene expression in females
+both_sex_padj.females.aDMCs<-padj.females.aDMCs[,rownames(df_aDMCs_both_sex_validated)]
+both_sex_gene_assoc_females_aDMCs <- matrix(NaN, nrow = nrow(both_sex_padj.females.aDMCs), ncol = 1, dimnames = list(rownames(both_sex_padj.females.aDMCs), "Number of associations"))
+both_sex_gene_assoc_females_aDMCs[,1] <- apply(both_sex_padj.females.aDMCs, 1, function(x){length(which(x <= 0.05))})
+  
+both_sex_cpg_assoc_females_aDMCs <- matrix(NaN, nrow = ncol(both_sex_padj.females.aDMCs), ncol = 1, dimnames = list(colnames(both_sex_padj.females.aDMCs), "Number of associations"))
+both_sex_cpg_assoc_females_aDMCs[,1] <- apply(both_sex_padj.females.aDMCs, 2, function(x){length(which(x <= 0.05))})
+  
+#Order the hits by number of associations to find the genes/cpgs with the most associations.
+both_sex_gene_assoc_females_aDMCs <- as.data.frame(both_sex_gene_assoc_females_aDMCs)
+both_sex_gene_assoc_females_aDMCs$`Associating CpGs` <- apply(both_sex_padj.females.aDMCs, 1, function(x){gsub(" ", ",", paste(names(which(x <= 0.05)), collapse = " "))})
+both_sex_gene_assoc_females_aDMCs <- both_sex_gene_assoc_females_aDMCs[order(both_sex_gene_assoc_females_aDMCs$`Number of associations`, decreasing = T),]  
+  
+both_sex_cpg_assoc_females_aDMCs <- as.data.frame(both_sex_cpg_assoc_females_aDMCs)
+both_sex_cpg_assoc_females_aDMCs$`Associating genes` <- apply(both_sex_padj.females.aDMCs, 2, function(x){gsub(" ", ",", paste(names(which(x <= 0.05)), collapse = " "))})
+both_sex_cpg_assoc_females_aDMCs <- both_sex_cpg_assoc_females_aDMCs[order(both_sex_cpg_assoc_females_aDMCs$`Number of associations`, decreasing = T),]
+# NB: After multiple testing correction,no both-sex aDMCs associated with gene expression in females.
+```
+
+# Test association between 208 aDMCs and 512 genes in 1338 males.
+```{r}
+# Make an empty dataframe for storing the gene-cpg distances.
+distance_males_aDMCs <- matrix(NaN, nrow = nrow(pvals_Xmales_aDMCs), ncol = ncol(pvals_Xmales_aDMCs), dimnames = list(rownames(pvals_Xmales_aDMCs), colnames(pvals_Xmales_aDMCs)))
+
+# Calculate the distance between a gene-cpg pair.
+ for(i in 1:ncol(pvals_Xmales_aDMCs)){
+    distance_males_aDMCs[,i]<-distance(ann450K_validated_aDMCs[colnames(pvals_Xmales_aDMCs)][i],GeneEns_chrX,ignore.strand = T)
+ }
+
+# Adjust the p-values for multiple testing, using the Bonferroni method.
+padj.males.aDMCs<-matrix(p.adjust(pvals_Xmales_aDMCs,method = "bonf"),nrow = nrow(pvals_Xmales_aDMCs), ncol = ncol(pvals_Xmales_aDMCs), dimnames = list(rownames(pvals_Xmales_aDMCs), colnames(pvals_Xmales_aDMCs))) 
+
+#Save the number of associations for each gene and cpg.
+# I. Check if male-specific aDMCs are associated with gene expression
+ms_padj.males.aDMCs<-padj.males.aDMCs[,rownames(df_aDMCs_male_specific_validated)]
+ms_gene_assoc_aDMCs <- matrix(NaN, nrow = nrow(ms_padj.males.aDMCs), ncol = 1, dimnames = list(rownames(ms_padj.males.aDMCs), "Number of associations"))
+ms_gene_assoc_aDMCs[,1] <- apply(ms_padj.males.aDMCs, 1, function(x){length(which(x <= 0.05))})
+  
+ms_cpg_assoc_aDMCs <- matrix(NaN, nrow = ncol(ms_padj.males.aDMCs), ncol = 1, dimnames = list(colnames(ms_padj.males.aDMCs), "Number of associations"))
+ms_cpg_assoc_aDMCs[,1] <- apply(ms_padj.males.aDMCs, 2, function(x){length(which(x <= 0.05))})
+  
+#Order the hits by number of associations to find the genes/cpgs with the most associations.
+ms_gene_assoc_aDMCs <- as.data.frame(ms_gene_assoc_aDMCs)
+ms_gene_assoc_aDMCs$`Associating CpGs` <- apply(ms_padj.males.aDMCs, 1, function(x){gsub(" ", ",", paste(names(which(x <= 0.05)), collapse = " "))})
+ms_gene_assoc_aDMCs <- ms_gene_assoc_aDMCs[order(ms_gene_assoc_aDMCs$`Number of associations`, decreasing = T),]  
+  
+ms_cpg_assoc_aDMCs <- as.data.frame(ms_cpg_assoc_aDMCs)
+ms_cpg_assoc_aDMCs$`Associating genes` <- apply(ms_padj.males.aDMCs, 2, function(x){gsub(" ", ",", paste(names(which(x <= 0.05)), collapse = " "))})
+ms_cpg_assoc_aDMCs <- ms_cpg_assoc_aDMCs[order(ms_cpg_assoc_aDMCs$`Number of associations`, decreasing = T),]
+
+#Plot the associations between ms aDMCs and genes in males.
+ms_aDMCs_sig_genes<-rownames(ms_gene_assoc_aDMCs)[which(ms_gene_assoc_aDMCs$`Number of associations` >= 1)]
+ms_aDMCs_sig_cpgs<-rownames(ms_cpg_assoc_aDMCs)[which(ms_cpg_assoc_aDMCs$`Number of associations` >= 1)]
+ms_aDMCs_t_sig<-matrix((tstats_Xmales_aDMCs[ms_aDMCs_sig_genes,ms_aDMCs_sig_cpgs]),nrow = 16,ncol = 33,dimnames = list(ms_aDMCs_sig_genes,ms_aDMCs_sig_cpgs))
+
+#Define color palette and breaks of the heatmap.
+my.palette <- colorRampPalette(c("#0000cc", "#0000ff", "#ffffff", "#ff0000", "#cc0000"))(n = 400)
+my.breaks <- seq(-12, 12, length=401)
+
+tiff("Output_10_heatmap_ms_aDMCs.tiff", units="in", width=9, height=8, res=600,compression ='lzw') 
+heatmap.3(ms_aDMCs_t_sig,labCol = colnames(ms_aDMCs_t_sig),labRow=GeneEns_chrX[rownames(ms_aDMCs_t_sig)]$symbol,col = my.palette,breaks = my.breaks,keysize = 1,KeyValueName="t-statistic")
+dev.off()
+
+
+# II. Check if both-sex aDMCs are associated with gene expression in males
+both_sex_padj.males.aDMCs<-padj.males.aDMCs[,rownames(df_aDMCs_both_sex_validated)]
+both_sex_gene_assoc_males_aDMCs <- matrix(NaN, nrow = nrow(both_sex_padj.males.aDMCs), ncol = 1, dimnames = list(rownames(both_sex_padj.males.aDMCs), "Number of associations"))
+both_sex_gene_assoc_males_aDMCs[,1] <- apply(both_sex_padj.males.aDMCs, 1, function(x){length(which(x <= 0.05))})
+  
+both_sex_cpg_assoc_males_aDMCs <- matrix(NaN, nrow = ncol(both_sex_padj.males.aDMCs), ncol = 1, dimnames = list(colnames(both_sex_padj.males.aDMCs), "Number of associations"))
+both_sex_cpg_assoc_males_aDMCs[,1] <- apply(both_sex_padj.males.aDMCs, 2, function(x){length(which(x <= 0.05))})
+  
+#Order the hits by number of associations to find the genes/cpgs with the most associations.
+both_sex_gene_assoc_males_aDMCs <- as.data.frame(both_sex_gene_assoc_males_aDMCs)
+both_sex_gene_assoc_males_aDMCs$`Associating CpGs` <- apply(both_sex_padj.males.aDMCs, 1, function(x){gsub(" ", ",", paste(names(which(x <= 0.05)), collapse = " "))})
+both_sex_gene_assoc_males_aDMCs <- both_sex_gene_assoc_males_aDMCs[order(both_sex_gene_assoc_males_aDMCs$`Number of associations`, decreasing = T),]  
+  
+both_sex_cpg_assoc_males_aDMCs <- as.data.frame(both_sex_cpg_assoc_males_aDMCs)
+both_sex_cpg_assoc_males_aDMCs$`Associating genes` <- apply(both_sex_padj.males.aDMCs, 2, function(x){gsub(" ", ",", paste(names(which(x <= 0.05)), collapse = " "))})
+both_sex_cpg_assoc_males_aDMCs <- both_sex_cpg_assoc_males_aDMCs[order(both_sex_cpg_assoc_males_aDMCs$`Number of associations`, decreasing = T),]
+# NB: After multiple testing correction,no both-sex aDMCs associated with gene expression in males.
+```
+
+# Test association between 566 aVMCs and 512 genes in 1798 females.
+```{r}
+# Creat GRanges object for all validated aVMCs.
+ann450K_validated_aVMCs<-ann450K_chrX[colnames(pvals_Xfemales_aVMCs)]
+
+# Make an empty dataframe for storing the gene-cpg distances.
+distance_females_aVMCs <- matrix(NaN, nrow = nrow(pvals_Xfemales_aVMCs), ncol = ncol(pvals_Xfemales_aVMCs), dimnames = list(rownames(pvals_Xfemales_aVMCs), colnames(pvals_Xfemales_aVMCs)))
+
+# Calculate the distance between a gene-cpg pair.
+ for(i in 1:ncol(pvals_Xfemales_aVMCs)){
+    distance_females_aVMCs[,i]<-distance(ann450K_validated_aVMCs[colnames(pvals_Xfemales_aVMCs)][i],GeneEns_chrX,ignore.strand = T)
+ }
+
+# Adjust the p-values for multiple testing, using the Bonferroni method.
+padj.females.aVMCs<-matrix(p.adjust(pvals_Xfemales_aVMCs,method = "bonf"),nrow = nrow(pvals_Xfemales_aVMCs), ncol = ncol(pvals_Xfemales_aVMCs), dimnames = list(rownames(pvals_Xfemales_aVMCs), colnames(pvals_Xfemales_aVMCs))) 
+
+#Save the number of associations for each gene and cpg.
+# I. Check if female-specific aVMCs are associated with gene expression in females
+fs_padj.females.aVMCs<-padj.females.aVMCs[,rownames(dat_aVMCs_females_validated)]
+fs_gene_assoc_aVMCs <- matrix(NaN, nrow = nrow(fs_padj.females.aVMCs), ncol = 1, dimnames = list(rownames(fs_padj.females.aVMCs), "Number of associations"))
+fs_gene_assoc_aVMCs[,1] <- apply(fs_padj.females.aVMCs, 1, function(x){length(which(x <= 0.05))})
+  
+fs_cpg_assoc_aVMCs <- matrix(NaN, nrow = ncol(fs_padj.females.aVMCs), ncol = 1, dimnames = list(colnames(fs_padj.females.aVMCs), "Number of associations"))
+fs_cpg_assoc_aVMCs[,1] <- apply(fs_padj.females.aVMCs, 2, function(x){length(which(x <= 0.05))})
+  
+#Order the hits by number of associations to find the genes/cpgs with the most associations.
+fs_gene_assoc_aVMCs <- as.data.frame(fs_gene_assoc_aVMCs)
+fs_gene_assoc_aVMCs$`Associating CpGs` <- apply(fs_padj.females.aVMCs, 1, function(x){gsub(" ", ",", paste(names(which(x <= 0.05)), collapse = " "))})
+fs_gene_assoc_aVMCs <- fs_gene_assoc_aVMCs[order(fs_gene_assoc_aVMCs$`Number of associations`, decreasing = T),]  
+  
+fs_cpg_assoc_aVMCs <- as.data.frame(fs_cpg_assoc_aVMCs)
+fs_cpg_assoc_aVMCs$`Associating genes` <- apply(fs_padj.females.aVMCs, 2, function(x){gsub(" ", ",", paste(names(which(x <= 0.05)), collapse = " "))})
+fs_cpg_assoc_aVMCs <- fs_cpg_assoc_aVMCs[order(fs_cpg_assoc_aVMCs$`Number of associations`, decreasing = T),]
+
+#Plot the associations between fs aVMCs and genes in females.
+fs_aVMCs_sig_genes<-rownames(fs_gene_assoc_aVMCs)[which(fs_gene_assoc_aVMCs$`Number of associations` >= 1)]
+fs_aVMCs_sig_cpgs<-rownames(fs_cpg_assoc_aVMCs)[which(fs_cpg_assoc_aVMCs$`Number of associations` >= 1)]
+fs_aVMCs_t_sig<-matrix((tstats_Xfemales_aVMCs[fs_aVMCs_sig_genes,fs_aVMCs_sig_cpgs]),nrow = 2,ncol = 3,dimnames = list(fs_aVMCs_sig_genes,fs_aVMCs_sig_cpgs))
+
+tiff("Output_10_heatmap_fs_aVMCs.tiff", units="in", width=9, height=8, res=600,compression ='lzw') 
+heatmap.3(fs_aVMCs_t_sig,labCol = colnames(fs_aVMCs_t_sig),labRow=GeneEns_chrX[rownames(fs_aVMCs_t_sig)]$symbol,col = my.palette,cexRow = 1.5,margins = c(10,7), cexCol = 1.5,keysize = 1,KeyValueName="t-statistic")
+dev.off()
+```
+
+# Test association between 566 aVMCs and 512 genes in 1798 males.
+```{r}
+# Adjust the p-values for multiple testing, using the Bonferroni method.
+padj.males.aVMCs<-matrix(p.adjust(pvals_Xmales_aVMCs,method = "bonf"),nrow = nrow(pvals_Xmales_aVMCs), ncol = ncol(pvals_Xmales_aVMCs), dimnames = list(rownames(pvals_Xmales_aVMCs), colnames(pvals_Xmales_aVMCs))) 
+
+#Save the number of associations for each gene and cpg.
+# I. Check if male-specific aVMCs are associated with gene expression in males.
+ms_padj.males.aVMCs<-padj.males.aVMCs[,rownames(dat_aVMCs_males_validated)]
+ms_gene_assoc_aVMCs <- matrix(NaN, nrow = nrow(ms_padj.males.aVMCs), ncol = 1, dimnames = list(rownames(ms_padj.males.aVMCs), "Number of associations"))
+ms_gene_assoc_aVMCs[,1] <- apply(ms_padj.males.aVMCs, 1, function(x){length(which(x <= 0.05))})
+  
+ms_cpg_assoc_aVMCs <- matrix(NaN, nrow = ncol(ms_padj.males.aVMCs), ncol = 1, dimnames = list(colnames(ms_padj.males.aVMCs), "Number of associations"))
+ms_cpg_assoc_aVMCs[,1] <- apply(ms_padj.males.aVMCs, 2, function(x){length(which(x <= 0.05))})
+  
+#Order the hits by number of associations to find the genes/cpgs with the most associations.
+ms_gene_assoc_aVMCs <- as.data.frame(ms_gene_assoc_aVMCs)
+ms_gene_assoc_aVMCs$`Associating CpGs` <- apply(ms_padj.males.aVMCs, 1, function(x){gsub(" ", ",", paste(names(which(x <= 0.05)), collapse = " "))})
+ms_gene_assoc_aVMCs <- ms_gene_assoc_aVMCs[order(ms_gene_assoc_aVMCs$`Number of associations`, decreasing = T),]  
+  
+ms_cpg_assoc_aVMCs <- as.data.frame(ms_cpg_assoc_aVMCs)
+ms_cpg_assoc_aVMCs$`Associating genes` <- apply(ms_padj.males.aVMCs, 2, function(x){gsub(" ", ",", paste(names(which(x <= 0.05)), collapse = " "))})
+ms_cpg_assoc_aVMCs <- ms_cpg_assoc_aVMCs[order(ms_cpg_assoc_aVMCs$`Number of associations`, decreasing = T),]
+# NB: After multiple testing correction,no ms aVMCs associated with gene expression in males.
+```
+
+```{r}
+# aDMCs associated with gene expression.
+save(distance_males_aDMCs,file = "Output_10_distance_aDMCs_males.RData")
+write.csv(ms_cpg_assoc_aDMCs,file = "Output_10_ms_aDMCs_cpg_assoc.csv")
+write.csv(ms_gene_assoc_aDMCs,file = "Output_10_ms_aDMCs_gene_assoc.csv")
+
+# aVMCs associated with gene expression.
+save(distance_females_aVMCs,file = "Output_10_distance_aVMCs_females.RData")
+write.csv(fs_cpg_assoc_aVMCs,file = "Output_10_fs_aVMCs_cpg_assoc.csv")
+write.csv(fs_gene_assoc_aVMCs,file = "Output_10_fs_aVMCs_gene_assoc.csv")
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

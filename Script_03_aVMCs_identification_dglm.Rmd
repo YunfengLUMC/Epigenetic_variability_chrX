@@ -1,0 +1,218 @@
+---
+title: "Script_03_aVMCs_identification_dglm"
+author: "Yunfeng Liu"
+date: "5/16/2022"
+output: html_document
+---
+# Script information 
+
+DGLM(Double generalized linear model) is a full parametric method that can be used to detect variance effect and mean effects at the same time. It include two parts:One is a generalized linear model,the other is a dispersion model. Specifically,the mean effects are estimated by a linear model,and then the varaince effects are estimated by dispersion sub-model.It works iteratively between models until convergence.
+
+Here,using DGLM,we performed EWAS(Epigenome-wide association study) to identify two different type of age-related DNA methylation changes on X chromosome: aDMCs(age-related differentially methylated CpGs) and aVMCs(age-related variable methylated CpGs).
+
+```{r}
+#set library path.
+.libPaths("~/researchdrive/yliu/BIOS_all/Functional interpretation of age-related X methylation/Rlibs")
+```
+
+```{r}
+#Load data.
+load(file ="./Output/Output_02/Output_02_DGLM_Xfemales_converge.RData")
+load(file ="./Output/Output_02/Output_02_DGLM_Xmales_converge.RData")
+load(file ="./Output/Output_01/Output_01_chrX_betas.RData")
+```
+
+```{r}
+#Load all necessary libraries.
+library(tidyverse)
+library(bacon)
+```
+
+
+```{r}
+## Correct bias and inflation for dispersion model.
+# Xfemales
+set.seed(1)
+bc_DGLM_Xfemales<- bacon(DGLM_Xfemales_converge[,7])
+
+# Calculate bias and inflation
+bias(bc_DGLM_Xfemales)         # 0.18   
+inflation(bc_DGLM_Xfemales)    # 1.1
+
+# Save histogram plot of test statistics 
+tiff("Output_03_Bacon_DGLM_Xfemales.tiff", units="in", width=8, height=6, res=600,compression = 'lzw')
+fit(bc_DGLM_Xfemales,xlab="t-statistics",main="aVMCs in females",n=100)
+dev.off()
+
+#Extract the BACON-adjusted t-statistics and p-values
+tstats_DGLM_Xfemales<-tstat(bc_DGLM_Xfemales)
+pvals_DGLM_Xfemales <-pval(bc_DGLM_Xfemales)
+table(pvals_DGLM_Xfemales<0.05)   # 5389  
+padjs_DGLM_Xfemales <- as.matrix(p.adjust(pvals_DGLM_Xfemales, method="bonf")) 
+table(padjs_DGLM_Xfemales<0.05)  # 631   
+
+# Extract BACON-adjusted effectsize.
+set.seed(1)
+bc_DGLM_Xfemales_es<-bacon(NULL,DGLM_Xfemales_converge[,5],DGLM_Xfemales_converge[,6])
+es_DGLM_Xfemales<-es(bc_DGLM_Xfemales_es)
+
+# Summary Bacon statistics
+dat_DGLM_Xfemales_bacon_disp<-as.data.frame(cbind(es_DGLM_Xfemales,tstats_DGLM_Xfemales,pvals_DGLM_Xfemales,padjs_DGLM_Xfemales))
+colnames(dat_DGLM_Xfemales_bacon_disp)<-c("bacon_effectsize_disp","bacon_tstatistics_disp","bacon_pval_disp","bacon_p.adj_disp")
+rownames(dat_DGLM_Xfemales_bacon_disp)<-make.names(rownames(DGLM_Xfemales_converge),unique = TRUE)
+```
+
+
+```{r}
+## Correct bias and inflation for dispersion model.
+# Xmales
+set.seed(1)
+bc_DGLM_Xmales<- bacon(DGLM_Xmales_converge[,7])
+
+# Calculate bias and inflation
+bias(bc_DGLM_Xmales)         # -0.7   
+inflation(bc_DGLM_Xmales)    # 1.2
+
+# Save histogram plot of test statistics 
+tiff("Output_03_Bacon_DGLM_Xmales.tiff", units="in", width=8, height=6, res=600,compression = 'lzw')
+fit(bc_DGLM_Xmales,xlab="t-statistics",main="aVMCs in males",n=100)
+dev.off()
+
+#Extract the BACON-adjusted t-statistics and p-values
+tstats_DGLM_Xmales<-tstat(bc_DGLM_Xmales)
+pvals_DGLM_Xmales <-pval(bc_DGLM_Xmales)
+table(pvals_DGLM_Xmales<0.05)   # 1016  
+padjs_DGLM_Xmales <- as.matrix(p.adjust(pvals_DGLM_Xmales, method="bonf")) 
+table(padjs_DGLM_Xmales<0.05)  # 36   
+
+# Extract BACON-adjusted effectsize.
+set.seed(1)
+bc_DGLM_Xmales_es<-bacon(NULL,DGLM_Xmales_converge[,5],DGLM_Xmales_converge[,6])
+es_DGLM_Xmales<-es(bc_DGLM_Xmales_es)
+
+# Summary Bacon statistics
+dat_DGLM_Xmales_bacon_disp<-as.data.frame(cbind(es_DGLM_Xmales,tstats_DGLM_Xmales,pvals_DGLM_Xmales,padjs_DGLM_Xmales))
+colnames(dat_DGLM_Xmales_bacon_disp)<-c("bacon_effectsize_disp","bacon_tstatistics_disp","bacon_pval_disp","bacon_p.adj_disp")
+rownames(dat_DGLM_Xmales_bacon_disp)<-make.names(rownames(DGLM_Xmales_converge),unique = TRUE)
+```
+
+```{r}
+# Extract dispersion effect size
+df_effectsize_disp<-as.data.frame(cbind(dat_DGLM_Xfemales_bacon_disp[,1],dat_DGLM_Xmales_bacon_disp[,1]))
+colnames(df_effectsize_disp)<-c("females","males")
+rownames(df_effectsize_disp)<-make.names(rownames(dat_DGLM_Xfemales_bacon_disp), unique=TRUE)
+
+# Keep significant aVMCs as dataframe (bacon_p.adj<0.05).
+dat_DGLM_Xfemales_bacon_disp<-filter(dat_DGLM_Xfemales_bacon_disp,bacon_p.adj_disp<0.05) # 631
+dat_DGLM_Xfemales_bacon_disp_up<-filter(dat_DGLM_Xfemales_bacon_disp,bacon_effectsize_disp>0) # 631
+dat_DGLM_Xfemales_bacon_disp_down<-filter(dat_DGLM_Xfemales_bacon_disp,bacon_effectsize_disp<0) # 0
+
+dat_DGLM_Xmales_bacon_disp<-filter(dat_DGLM_Xmales_bacon_disp,bacon_p.adj_disp<0.05)  # 36
+dat_DGLM_Xmales_bacon_disp_up<-filter(dat_DGLM_Xmales_bacon_disp,bacon_effectsize_disp>0) # 35
+dat_DGLM_Xmales_bacon_disp_down<-filter(dat_DGLM_Xmales_bacon_disp,bacon_effectsize_disp<0) # 1
+
+save(dat_DGLM_Xfemales_bacon_disp,dat_DGLM_Xfemales_bacon_disp_up,dat_DGLM_Xmales_bacon_disp,dat_DGLM_Xmales_bacon_disp_down,dat_DGLM_Xmales_bacon_disp_up,file = "Output_03_Catalogue_aVMCs_BIOS.RData")
+```
+
+
+```{r}
+# Scatter plot of effect size for 667 significant aVMCs.
+sig.aVMCs<-c(rownames(dat_DGLM_Xfemales_bacon_disp),rownames(dat_DGLM_Xmales_bacon_disp))
+df_aVMCs_effectsize_BIOS<-df_effectsize_disp[sig.aVMCs,]
+df_aVMCs_effectsize_BIOS$symbol<-c(rep(0,length(rownames(dat_DGLM_Xfemales_bacon_disp))),rep(1,length(rownames(dat_DGLM_Xmales_bacon_disp))))
+df_aVMCs_effectsize_BIOS$symbol<-gsub(0, "female-specific", df_aVMCs_effectsize_BIOS$symbol)
+df_aVMCs_effectsize_BIOS$symbol<-gsub(1, "male-specific", df_aVMCs_effectsize_BIOS$symbol)
+
+save(df_aVMCs_effectsize_BIOS,file="Output_03_aVMCs_effectsize_BIOS.RData")
+
+# Save plot
+tiff("Output_03_Comparison of aVMCs size effect between sex.tiff", units="in", width=12, height=8, res=800,compression = 'lzw')
+ggplot(df_aVMCs_effectsize_BIOS) +
+    aes(x = males,y = females,color=symbol) +
+     geom_point(size = 2, alpha = 0.5) +
+     geom_vline(aes(xintercept=0)) +
+     geom_hline(aes(yintercept=0)) +
+     geom_abline(slope=1, intercept = 0)+
+  scale_x_continuous(limits=c(-0.04, 0.04))+
+  scale_y_continuous(limits=c(-0.04, 0.04))+
+  scale_color_discrete(name="aVMCs",breaks=c( "female-specific","male-specific"),labels=c("female-specific:631CpGs","male-specific:36CpGs"))+
+  theme(text = element_text(size = 20),plot.title = element_text(hjust = 0.5))+
+    labs(x="Males effe ctsize",y="Females effect size") 
+dev.off()
+```
+
+```{r}
+# Calculate the mean methylation of these aVMCs
+aVMCs_fs<-t(assay(betas_Xfemales))[,rownames(dat_DGLM_Xfemales_bacon_disp)]
+aVMCs_fs<-as.data.frame(aVMCs_fs)
+aVMCs_ms<-t(assay(betas_Xmales))[,rownames(dat_DGLM_Xmales_bacon_disp)]
+aVMCs_ms<-as.data.frame(aVMCs_ms)
+
+dat_mean_aVMCs_fs<-as.data.frame(rowMeans(t(aVMCs_fs),na.rm = TRUE))
+colnames(dat_mean_aVMCs_fs)<-"females"
+dat_mean_aVMCs_ms<-as.data.frame(rowMeans(t(aVMCs_ms),na.rm = TRUE))
+colnames(dat_mean_aVMCs_ms)<-"males"
+
+save(aVMCs_fs,aVMCs_ms,file="Output_03_aVMCs_Beta.RData")
+save(dat_mean_aVMCs_fs,dat_mean_aVMCs_ms,file="Output_03_dat_mean_aVMCs.RData")
+
+# Check the number of hypo- hyper- intermediate- aVMCs
+# Females
+table(dat_mean_aVMCs_fs$females<0.2) # 34 hypomethylated CpGs
+table(dat_mean_aVMCs_fs$females>0.8) # 21 hypermethylated CpGs
+
+# Males
+table(dat_mean_aVMCs_ms$males<0.2) # 0 hypomethylated CpGs
+table(dat_mean_aVMCs_ms$males>0.8) # 2 hypermethylated CpGs
+
+n_aVMCs<-c(34,0,21,2)
+type<-c("Females","Males")
+methylation_level<-c("Hypomethylation","Hypermethylation")
+aVMCs_status<-data.frame(Type=rep(type,2),N=n_aVMCs,methylation_level=rep(methylation_level,each=2))
+
+tiff("Output_03_aVMCs_hypo_hyper.tiff", units="in", width=12, height=8, res=600,compression ='lzw') 
+ggplot(aVMCs_status) +
+    aes(x=Type,y=N,fill=factor(methylation_level,levels=c("Hypomethylation","Hypermethylation")))+
+     geom_bar(position="dodge", stat="identity")+
+    theme(axis.text.x = element_text(size = 15),axis.text.y = element_text(size = 15),axis.title.y = element_text(size = 15),legend.text = element_text(size = 15),legend.title=element_blank())+
+     scale_fill_manual(values=c("#B3E2CD", "#FDCDAC"))+
+     xlab("")+
+     ylab("The number of aVMCs")
+dev.off()
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
