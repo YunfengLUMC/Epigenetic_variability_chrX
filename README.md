@@ -23,4 +23,4 @@ Script 8: Fuctional annotatation of XCI related features of aDMCs and aVMCs.
 
 Script 9: Test assocaition between aDMCs/aVMCs methylation and X chromosome gene expression.
 
-Script 10: Identify differentially methylated regions (DMRs) among replicated aDMCs and aVMCs. 
+Script 10: Identify differentially methylated regions (DMRs) on replicated aDMCs and aVMCs. 
