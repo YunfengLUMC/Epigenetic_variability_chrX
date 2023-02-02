@@ -1,13 +1,17 @@
 ---
 title: "Functional annotation of aDMCs and aVMCs"
 author: "Yunfeng"
-date: "5/30/2022"
+date: "1/16/2023"
 output: html_document
 ---
+#Script information
+
+This script was written to annotate XCI related features of aDMCs and aVMCs.
+
 
 ```{r}
 #set library path.
-.libPaths("~/researchdrive/yliu/BIOS_all/Functional interpretation of age-related X methylation/Rlibs")
+.libPaths("~/researchdrive/yliu/Rlibs")
 ```
 
 
@@ -16,7 +20,6 @@ output: html_document
 load(file = "Output_05_Catalogue_aDMCs_validated.RData")
 load(file = "Output_06_Catalogue_aVMCs_validated.RData")
 load(file = "Output_07_450K_chrX_annotation.RData")
-load(file = "Output_01_chrX_betas.RData")
 ```
 
 ```{r}
@@ -24,419 +27,162 @@ load(file = "Output_01_chrX_betas.RData")
 library(tidyverse)
 ```
 
+```{r}
+### Prepare aDMCs annotation data.
+# aDMCs in females
+ann450K_aDMCs_females<-ann450K_chrX[row.names(dat_aDMCs_females_validated),]
+table(ann450K_aDMCs_females$CGI_Feature)
+# CGI:8  Shore:7   non-CGI:18
+
+# aDMCs in males
+ann450K_aDMCs_males<-ann450K_chrX[row.names(dat_aDMCs_males_validated),]
+table(ann450K_aDMCs_males$CGI_Feature)
+# CGI:83  Shore:67   non-CGI:40
+```
 
 ```{r}
 ### Prepare aDMCs annotation data.
-ann450K_fs_aDMCs<-ann450K_chrX[row.names(df_aDMCs_female_specific_validated),]
-table(ann450K_fs_aDMCs$CGI_Feature)
-# CGI:6  Shore:1   non-CGI:11
+# aVMCs in females
+ann450K_aVMCs_females<-ann450K_chrX[row.names(dat_aVMCs_females_validated),]
+table(ann450K_aVMCs_females$CGI_Feature)
+# CGI:473  Shore:299   non-CGI:215
 
-ann450K_ms_aDMCs<-ann450K_chrX[row.names(df_aDMCs_male_specific_validated),]
-table(ann450K_ms_aDMCs$CGI_Feature)
-# CGI:81  Shore:63   non-CGI:35
+# aVMCs in males
+ann450K_aVMCs_males<-ann450K_chrX[row.names(dat_aVMCs_males_validated),]
+table(ann450K_aVMCs_males$CGI_Feature)
+# CGI:2  Shore:21   non-CGI:14
+```
 
-ann450K_both_sex_aDMCs<-ann450K_chrX[row.names(df_aDMCs_both_sex_validated),]
-table(ann450K_both_sex_aDMCs$CGI_Feature)
-# CGI:2  Shore:4   non-CGI:5
+```{r}
+# CGI annotation of aDMCs and aVMCs in females and males.
+ann450K_aDMCs_females<-as.data.frame(ann450K_aDMCs_females)
+ann450K_aDMCs_males<-as.data.frame(ann450K_aDMCs_males)
+ann450K_aVMCs_females<-as.data.frame(ann450K_aVMCs_females)
+ann450K_aVMCs_males<-as.data.frame(ann450K_aVMCs_males)
+ann450K_chrX_reference<-as.data.frame(ann450K_chrX)
 
-ann450K_all_aDMCs<-c(ann450K_fs_aDMCs,ann450K_ms_aDMCs,ann450K_both_sex_aDMCs)
-ann450K_all_aDMCs$symbol<-c(rep(0,18),rep(1,179),rep(2,11))
-ann450K_all_aDMCs$symbol<-gsub(0,"female-specific",ann450K_all_aDMCs$symbol)
-ann450K_all_aDMCs$symbol<-gsub(1,"male-specific",ann450K_all_aDMCs$symbol)
-ann450K_all_aDMCs$symbol<-gsub(2,"both-sex",ann450K_all_aDMCs$symbol)
+ann450K_aDMCs_aVMCs_females_males<-rbind(ann450K_chrX_reference,ann450K_aDMCs_females,ann450K_aVMCs_females,ann450K_chrX_reference,ann450K_aDMCs_males,ann450K_aVMCs_males)
 
-# Bar plot of CGIs annotation
-ann450K_all_aDMCs<-data.frame(ann450K_all_aDMCs)
-rownames(ann450K_all_aDMCs)<-make.names(c(rownames(df_aDMCs_female_specific_validated),rownames(df_aDMCs_male_specific_validated),rownames(df_aDMCs_both_sex_validated)),unique = TRUE)
-
-tiff("Output_07_CGIs annotation of aDMCs.tiff", units="in", width=9, height=8, res=600,compression ='lzw')
-symbol=c("female-specific","male-specific","both-sex")
-ggplot(ann450K_all_aDMCs) +
-  geom_bar(aes(symbol,fill=CGI_Feature), position = "fill",alpha=1.5) +
+ann450K_aDMCs_aVMCs_females_males$symbol<-c(rep("Control",9777),rep("aDMCs",33),rep("aVMCs",987),rep("Control",9777),rep("aDMCs",316),rep("aVMCs",37))
+ann450K_aDMCs_aVMCs_females_males$sex<-c(rep("Females",10797),rep("Males",10130))
+ann450K_aDMCs_aVMCs_females_males$symbol<-factor(ann450K_aDMCs_aVMCs_females_males$symbol,levels = unique(ann450K_aDMCs_aVMCs_females_males$symbol))
+ann450K_aDMCs_aVMCs_females_males$sex<-factor(ann450K_aDMCs_aVMCs_females_males$sex,levels = c("Males","Females"))
+ann450K_aDMCs_aVMCs_females_males$CGI_Feature<-factor(ann450K_aDMCs_aVMCs_females_males$CGI_Feature,levels = c("non-CGI","Shore","CGI"))
+save(ann450K_aDMCs_aVMCs_females_males,file = "CGI_XCI_feature_annotation.RData")
+  
+tiff("Output_08_CGI annotation of aDMCs and aVMCs.tiff", units="in", width=15, height=9, res=600,compression ='lzw') 
+  ggplot(ann450K_aDMCs_aVMCs_females_males) +
+  geom_bar(aes(x=symbol,fill=CGI_Feature), position = "fill") +
+     facet_grid(~sex,switch ="y",scales = "fixed") +
   labs(fill = "CGI_Feature") +
-     theme(axis.text.x = element_text(angle = 45,hjust = 1))+
-     scale_fill_manual(values=c("#B3E2CD", "#FDCDAC", "#CBD5E8"))+
-     scale_x_discrete(limits = symbol)+
-     ggtitle("CGI annotation of aDMCs")+
+     scale_fill_manual(values=c("#3CAEA3","#F6D55C","#ED553B"))+
      xlab("") + 
     ylab("Fraction") +
-    theme(axis.text.x = element_text(size = 20),
-  axis.title.y = element_text(size = 20),plot.title = element_text(hjust = 0.5,size = 20),legend.text = element_text(size = 20),legend.title = element_text(size = 20))
+    theme_bw()+
+    theme(panel.spacing.x = unit(.5, "cm"),legend.position = "bottom",axis.text.x = element_text(angle = 45,hjust = 1,size = 34),axis.text.y = element_text(size = 34),axis.title.y = element_text(size = 34),legend.text = element_text(size = 29),legend.title = element_blank(),strip.text.x = element_text(size = 30))
 dev.off()
+```
 
-# Bar plot of XCI annotation
-tiff("Output_07_XCI annotation of aDMCs.tiff", units="in", width=11, height=8, res=600,compression ='lzw') 
-ggplot(subset(ann450K_all_aDMCs,Distance<=10000)) +
-  geom_bar(aes(symbol,fill=XCI.Status), position = "fill",alpha=1.5) +
+
+```{r}
+# XCI annotation based on TSS meta calls.
+ann450K_aDMCs_aVMCs_females_males$XCI.Status.meta.calls<-gsub("escapes XCI","Escape XCI",ann450K_aDMCs_aVMCs_females_males$XCI.Status.meta.calls)
+ann450K_aDMCs_aVMCs_females_males$XCI.Status.meta.calls<-gsub("subject to XCI","Subject to XCI",ann450K_aDMCs_aVMCs_females_males$XCI.Status.meta.calls)
+ann450K_aDMCs_aVMCs_females_males$XCI.Status.meta.calls<-gsub("variably escapes from XCI","Variably escape XCI",ann450K_aDMCs_aVMCs_females_males$XCI.Status.meta.calls)
+
+ann450K_aDMCs_aVMCs_females_males$XCI.Status.meta.calls<-factor(ann450K_aDMCs_aVMCs_females_males$XCI.Status.meta.calls,levels = c("Escape XCI","Variably escape XCI","Subject to XCI"))
+ann450K_aDMCs_aVMCs_females_males<-filter(ann450K_aDMCs_aVMCs_females_males,Distance.meta.calls<=2000)
+xtabs(~XCI.Status.meta.calls+symbol+sex,ann450K_aDMCs_aVMCs_females_males)
+
+tiff("Output_08_XCI annotation_meta_calls.tiff", units="in", width=15, height=9, res=600,compression ='lzw')
+  ggplot(ann450K_aDMCs_aVMCs_females_males) +
+  geom_bar(aes(x=symbol,fill=XCI.Status.meta.calls), position = "fill") +
+     facet_grid(~sex,switch ="y",scales = "fixed") +
   labs(fill = "XCI status") +
-     theme(axis.text.x = element_text(angle = 45,hjust = 1))+
-     scale_fill_manual(values=c("#B3E2CD", "#FDCDAC", "#CBD5E8"))+
-     scale_x_discrete(limits = symbol)+
-     ggtitle("XCI annotation of aDMCs")+
+     scale_fill_manual(values=c("#3CAEA3","#F6D55C","#ED553B"))+
      xlab("") + 
     ylab("Fraction") +
-    theme(axis.text.x = element_text(size = 20),
-  axis.title.y = element_text(size = 20),plot.title = element_text(hjust = 0.5,size = 20),legend.text = element_text(size = 20),legend.title = element_text(size = 20))
-dev.off()
-```
-
-```{r}
-# CGI annotation of gain aDMCs
-df_aDMCs_female_specific_gain_validated<-filter(df_aDMCs_female_specific_validated,bacon_effectsize_linear>0) # 6
-df_aDMCs_male_specific_gain_validated<-filter(df_aDMCs_male_specific_validated,bacon_effectsize_linear>0)    # 96
-df_aDMCs_both_sex_gain_validated<-filter(df_aDMCs_both_sex_validated,bacon_effectsize_linear>0)   # 3
-
-ann450K_fs_aDMCs_up<-ann450K_chrX[row.names(df_aDMCs_female_specific_gain_validated),]
-table(ann450K_fs_aDMCs_up$CGI_Feature)
-# CGI:6  Shore:0   non-CGI:0
-
-ann450K_ms_aDMCs_up<-ann450K_chrX[row.names(df_aDMCs_male_specific_gain_validated),]
-table(ann450K_ms_aDMCs_up$CGI_Feature)
-# CGI:78  Shore:11   non-CGI:7
-
-ann450K_both_sex_aDMCs_up<-ann450K_chrX[row.names(df_aDMCs_both_sex_gain_validated),]
-table(ann450K_both_sex_aDMCs_up$CGI_Feature)
-# CGI:2  Shore:1   non-CGI:0
-
-ann450K_all_aDMCs_up<-c(ann450K_fs_aDMCs_up,ann450K_ms_aDMCs_up,ann450K_both_sex_aDMCs_up)
-ann450K_all_aDMCs_up$symbol<-c(rep(0,6),rep(1,96),rep(2,3))
-ann450K_all_aDMCs_up$symbol<-gsub(0,"female-specific",ann450K_all_aDMCs_up$symbol)
-ann450K_all_aDMCs_up$symbol<-gsub(1,"male-specific",ann450K_all_aDMCs_up$symbol)
-ann450K_all_aDMCs_up$symbol<-gsub(2,"both-sex",ann450K_all_aDMCs_up$symbol)
-
-# Bar plot of CGIs annotation(up)
-ann450K_all_aDMCs_up<-data.frame(ann450K_all_aDMCs_up)
-rownames(ann450K_all_aDMCs_up)<-make.names(c(rownames(df_aDMCs_female_specific_gain_validated),rownames(df_aDMCs_male_specific_gain_validated),rownames(df_aDMCs_both_sex_gain_validated)),unique = TRUE)
-
-tiff("Output_07_CGIs annotation of gain aDMCs.tiff", units="in", width=9, height=8, res=600,compression ='lzw') 
-ggplot(ann450K_all_aDMCs_up) +
-  geom_bar(aes(symbol,fill=CGI_Feature), position = "fill",alpha=1.5) +
-  labs(fill = "CGI_Feature") +
-     theme(axis.text.x = element_text(angle = 45,hjust = 1))+
-     scale_fill_manual(values=c("#B3E2CD", "#FDCDAC", "#CBD5E8"))+
-     scale_x_discrete(limits = symbol)+
-     ggtitle("CGI annotation of gain aDMCs")+
-     xlab("") + 
-    ylab("Fraction") +
-    theme(axis.text.x = element_text(size = 20),
-  axis.title.y = element_text(size = 20),plot.title = element_text(hjust = 0.5,size = 20),legend.text = element_text(size = 20),legend.title = element_text(size = 20))
-dev.off()
-
-### CGI annotation of loss aDMCs
-df_aDMCs_female_specific_loss_validated<-filter(df_aDMCs_female_specific_validated,bacon_effectsize_linear<0) # 12
-df_aDMCs_male_specific_loss_validated<-filter(df_aDMCs_male_specific_validated,bacon_effectsize_linear<0) # 83
-df_aDMCs_both_sex_loss_validated<-filter(df_aDMCs_both_sex_validated,bacon_effectsize_linear<0) # 8
-
-ann450K_fs_aDMCs_down<-ann450K_chrX[row.names(df_aDMCs_female_specific_loss_validated),]
-table(ann450K_fs_aDMCs_down$CGI_Feature)
-# CGI:0  Shore:1   non-CGI:11
-
-ann450K_ms_aDMCs_down<-ann450K_chrX[row.names(df_aDMCs_male_specific_loss_validated),]
-table(ann450K_ms_aDMCs_down$CGI_Feature)
-# CGI:3  Shore:52   non-CGI:28
-
-ann450K_both_sex_aDMCs_down<-ann450K_chrX[row.names(df_aDMCs_both_sex_loss_validated),]
-table(ann450K_both_sex_aDMCs_down$CGI_Feature)
-# CGI:0  Shore:3   non-CGI:5
-
-ann450K_all_aDMCs_down<-c(ann450K_fs_aDMCs_down,ann450K_ms_aDMCs_down,ann450K_both_sex_aDMCs_down)
-ann450K_all_aDMCs_down$symbol<-c(rep(0,12),rep(1,83),rep(2,8))
-ann450K_all_aDMCs_down$symbol<-gsub(0,"female-specific",ann450K_all_aDMCs_down$symbol)
-ann450K_all_aDMCs_down$symbol<-gsub(1,"male-specific",ann450K_all_aDMCs_down$symbol)
-ann450K_all_aDMCs_down$symbol<-gsub(2,"both-sex",ann450K_all_aDMCs_down$symbol)
-
-# Bar plot of CGIs annotation(down)
-ann450K_all_aDMCs_down<-data.frame(ann450K_all_aDMCs_down)
-rownames(ann450K_all_aDMCs_down)<-make.names(c(rownames(df_aDMCs_female_specific_loss_validated),rownames(df_aDMCs_male_specific_loss_validated),rownames(df_aDMCs_both_sex_loss_validated)),unique = TRUE)
-
-tiff("Output_07_CGIs annotation of loss aDMCs.tiff", units="in", width=9, height=8, res=600,compression ='lzw')
-ggplot(ann450K_all_aDMCs_down) +
-  geom_bar(aes(symbol,fill=CGI_Feature), position = "fill",alpha=1.5) +
-  labs(fill = "CGI_Feature") +
-     theme(axis.text.x = element_text(angle = 45,hjust = 1))+
-     scale_fill_manual(values=c("#B3E2CD", "#FDCDAC", "#CBD5E8"))+
-     scale_x_discrete(limits = symbol)+
-     ggtitle("CGI annotation of loss aDMCs")+
-     xlab("") + 
-    ylab("Fraction") +
-    theme(axis.text.x = element_text(size = 20),
-  axis.title.y = element_text(size = 20),plot.title = element_text(hjust = 0.5,size = 20),legend.text = element_text(size = 20),legend.title = element_text(size = 20))
+    theme_bw()+
+    theme(panel.spacing.x = unit(.5, "cm"),legend.position = "bottom",axis.text.x = element_text(angle = 45,hjust = 1,size = 34),axis.text.y = element_text(size = 34),axis.title.y = element_text(size = 34),legend.text = element_text(size = 29),legend.title = element_blank(),strip.text.x = element_text(size = 30))
 dev.off()
 ```
 
 
 ```{r}
-# XCI annotation of gain aDMCs
-tiff("Output_07_XCI annotation of gain aDMCs.tiff", units="in", width=11, height=8, res=600,compression ='lzw') 
-ggplot(subset(ann450K_all_aDMCs_up,Distance<=10000)) +
-  geom_bar(aes(symbol,fill=XCI.Status), position = "fill",alpha=1.5) +
-  labs(fill = "XCI status") +
-     theme(axis.text.x = element_text(angle = 45,hjust = 1))+
-     scale_fill_manual(values=c("#B3E2CD", "#FDCDAC", "#CBD5E8"))+
-     scale_x_discrete(limits = symbol)+
-     ggtitle("XCI annotation of gain aDMCs")+
-     xlab("") + 
-    ylab("Fraction") +
-    theme(axis.text.x = element_text(size = 20),
-  axis.title.y = element_text(size = 20),plot.title = element_text(hjust = 0.5,size = 20),legend.text = element_text(size = 20),legend.title = element_text(size = 20))
-dev.off()
+# Calculate the mean methylation of aDMCs in females and males.
+load(file = "Output_01_chrX_betas.RData")
+aDMCs_females<-t(assay(betas_Xfemales))[,rownames(dat_aDMCs_females_validated)]
+aDMCs_females<-as.data.frame(aDMCs_females)
+dat_mean_aDMCs_females<-as.data.frame(rowMeans(t(aDMCs_females),na.rm = TRUE))
+colnames(dat_mean_aDMCs_females)<-"Beta value"
 
-# XCI annotation of loss aDMCs
-tiff("Output_07_XCI annotation of loss aDMCs.tiff", units="in", width=11, height=8, res=600,compression ='lzw') 
-ggplot(subset(ann450K_all_aDMCs_down,Distance<=10000)) +
-  geom_bar(aes(symbol,fill=XCI.Status), position = "fill",alpha=1.5) +
-  labs(fill = "XCI status") +
-     theme(axis.text.x = element_text(angle = 45,hjust = 1))+
-     scale_fill_manual(values=c("#B3E2CD", "#FDCDAC", "#CBD5E8"))+
-     scale_x_discrete(limits = symbol)+
-     ggtitle("XCI annotation of loss aDMCs")+
-     xlab("") + 
-    ylab("Fraction") +
-    theme(axis.text.x = element_text(size = 20),
-  axis.title.y = element_text(size = 20),plot.title = element_text(hjust = 0.5,size = 20),legend.text = element_text(size = 20),legend.title = element_text(size = 20))
-dev.off()
+table(dat_mean_aDMCs_females$`Beta value`<0.25) # 13
+table(dat_mean_aDMCs_females$`Beta value`>0.7) # 1
+
+aDMCs_males<-t(assay(betas_Xmales))[,rownames(dat_aDMCs_males_validated)]
+aDMCs_males<-as.data.frame(aDMCs_males)
+dat_mean_aDMCs_males<-as.data.frame(rowMeans(t(aDMCs_males),na.rm = TRUE))
+colnames(dat_mean_aDMCs_males)<-"Beta value"
+
+table(dat_mean_aDMCs_males$`Beta value`<0.25) # 161 
+table(dat_mean_aDMCs_males$`Beta value` >0.7) # 63
 ```
 
 ```{r}
-save(ann450K_all_aDMCs,ann450K_all_aDMCs_down,ann450K_all_aDMCs_up,file = "Output_07_Functional annotation of aDMCs.RData")
-save(df_aDMCs_both_sex_gain_validated,df_aDMCs_both_sex_loss_validated,df_aDMCs_both_sex_validated,df_aDMCs_female_specific_gain_validated,df_aDMCs_female_specific_loss_validated,df_aDMCs_female_specific_validated,df_aDMCs_male_specific_gain_validated,df_aDMCs_male_specific_loss_validated,df_aDMCs_male_specific_validated,file = "Output_07_Catalogue_aDMCs_validated.RData")
-```
-
----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-
-```{r}
-### Prepare aVMCs annotation data.
-ann450K_fs_aVMCs<-ann450K_chrX[row.names(dat_aVMCs_females_validated),]
-table(ann450K_fs_aVMCs$CGI_Feature)
-# CGI:256  Shore:180   non-CGI:96
-
-ann450K_ms_aVMCs<-ann450K_chrX[row.names(dat_aVMCs_males_validated),]
-table(ann450K_ms_aVMCs$CGI_Feature)
-# CGI:4  Shore:21   non-CGI:9
-
-ann450K_all_aVMCs<-c(ann450K_fs_aVMCs,ann450K_ms_aVMCs)
-ann450K_all_aVMCs$symbol<-c(rep(0,532),rep(1,34))
-ann450K_all_aVMCs$symbol<-gsub(0,"female-specific",ann450K_all_aVMCs$symbol)
-ann450K_all_aVMCs$symbol<-gsub(1,"male-specific",ann450K_all_aVMCs$symbol)
-
-# Bar plot of CGIs annotation
-ann450K_all_aVMCs<-data.frame(ann450K_all_aVMCs)
-rownames(ann450K_all_aVMCs)<-make.names(c(rownames(dat_aVMCs_females_validated),rownames(dat_aVMCs_males_validated)),unique = TRUE)
-
-tiff("Output_07_CGIs annotation of aVMCs.tiff", units="in", width=9, height=8, res=600,compression ='lzw')
-ggplot(ann450K_all_aVMCs) +
-  geom_bar(aes(x=symbol,fill=CGI_Feature),position = "fill",alpha=1.5) +
-  labs(fill = "CGI_Feature") +
-     theme(axis.text.x = element_text(angle = 45,hjust = 1))+
-     scale_fill_manual(values=c("#B3E2CD", "#FDCDAC", "#CBD5E8"))+
-     ggtitle("CGI annotation of aVMCs")+
-     xlab("") + 
-    ylab("Fraction") +
-    theme(axis.text.x = element_text(size = 20),
-  axis.title.y = element_text(size = 20),plot.title = element_text(hjust = 0.5,size = 20),legend.text = element_text(size = 20),legend.title = element_text(size = 20))
-dev.off()
-
-# Bar plot of XCI annotation
-tiff("Output_07_XCI annotation of aVMCs.tiff", units="in", width=11, height=8, res=600,compression ='lzw') 
-ggplot(subset(ann450K_all_aVMCs,Distance<=10000)) +
-  geom_bar(aes(symbol,fill=XCI.Status), position = "fill",alpha=1.5) +
-  labs(fill = "XCI status") +
-     theme(axis.text.x = element_text(angle = 45,hjust = 1))+
-     scale_fill_manual(values=c("#B3E2CD", "#FDCDAC", "#CBD5E8"))+
-     ggtitle("XCI annotation of aVMCs")+
-     xlab("") + 
-    ylab("Fraction") +
-    theme(axis.text.x = element_text(size = 20),
-  axis.title.y = element_text(size = 20),plot.title = element_text(hjust = 0.5,size = 20),legend.text = element_text(size = 20),legend.title = element_text(size = 20))
-dev.off()
-```
-
-```{r}
-save(ann450K_all_aVMCs,file = "Output_07_Functional annotation of aVMCs.RData")
-```
-
-
----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-
-```{r}
-# Calculate the mean methylation of aDMCs
-fs_aDMCs_females<-t(assay(betas_Xfemales))[,rownames(df_aDMCs_female_specific_validated)]
-fs_aDMCs_females<-as.data.frame(fs_aDMCs_females)
-
-fs_aDMCs_gain_females<-t(assay(betas_Xfemales))[,rownames(df_aDMCs_female_specific_gain_validated)]
-fs_aDMCs_gain_females<-as.data.frame(fs_aDMCs_gain_females)
-
-fs_aDMCs_loss_females<-t(assay(betas_Xfemales))[,rownames(df_aDMCs_female_specific_loss_validated)]
-fs_aDMCs_loss_females<-as.data.frame(fs_aDMCs_loss_females)
-
-ms_aDMCs_males<-t(assay(betas_Xmales))[,rownames(df_aDMCs_male_specific_validated)]
-ms_aDMCs_males<-as.data.frame(ms_aDMCs_males)
-
-ms_aDMCs_gain_males<-t(assay(betas_Xmales))[,rownames(df_aDMCs_male_specific_gain_validated)]
-ms_aDMCs_gain_males<-as.data.frame(ms_aDMCs_gain_males)
-
-ms_aDMCs_loss_males<-t(assay(betas_Xmales))[,rownames(df_aDMCs_male_specific_loss_validated)]
-ms_aDMCs_loss_males<-as.data.frame(ms_aDMCs_loss_males)
-
-both_sex_aDMCs_females<-t(assay(betas_Xfemales))[,rownames(df_aDMCs_both_sex_validated)]
-both_sex_aDMCs_females<-as.data.frame(both_sex_aDMCs_females)
-
-both_sex_aDMCs_gain_females<-t(assay(betas_Xfemales))[,rownames(df_aDMCs_both_sex_gain_validated)]
-both_sex_aDMCs_gain_females<-as.data.frame(both_sex_aDMCs_gain_females)
-
-both_sex_aDMCs_loss_females<-t(assay(betas_Xfemales))[,rownames(df_aDMCs_both_sex_loss_validated)]
-both_sex_aDMCs_loss_females<-as.data.frame(both_sex_aDMCs_loss_females)
-
-both_sex_aDMCs_males<-t(assay(betas_Xmales))[,rownames(df_aDMCs_both_sex_validated)]
-both_sex_aDMCs_males<-as.data.frame(both_sex_aDMCs_males)
-
-both_sex_aDMCs_gain_males<-t(assay(betas_Xmales))[,rownames(df_aDMCs_both_sex_gain_validated)]
-both_sex_aDMCs_gain_males<-as.data.frame(both_sex_aDMCs_gain_males)
-
-both_sex_aDMCs_loss_males<-t(assay(betas_Xmales))[,rownames(df_aDMCs_both_sex_loss_validated)]
-both_sex_aDMCs_loss_males<-as.data.frame(both_sex_aDMCs_loss_males)
-
-dat_mean_fs_aDMCs_females<-as.data.frame(rowMeans(t(fs_aDMCs_females),na.rm = TRUE))
-colnames(dat_mean_fs_aDMCs_females)<-"females"
-
-dat_mean_fs_aDMCs_gain_females<-as.data.frame(rowMeans(t(fs_aDMCs_gain_females),na.rm = TRUE))
-colnames(dat_mean_fs_aDMCs_gain_females)<-"females"
-
-dat_mean_fs_aDMCs_loss_females<-as.data.frame(rowMeans(t(fs_aDMCs_loss_females),na.rm = TRUE))
-colnames(dat_mean_fs_aDMCs_loss_females)<-"females"
-
-dat_mean_ms_aDMCs_males<-as.data.frame(rowMeans(t(ms_aDMCs_males),na.rm = TRUE))
-colnames(dat_mean_ms_aDMCs_males)<-"males"
-
-dat_mean_ms_aDMCs_gain_males<-as.data.frame(rowMeans(t(ms_aDMCs_gain_males),na.rm = TRUE))
-colnames(dat_mean_ms_aDMCs_gain_males)<-"males"
-
-dat_mean_ms_aDMCs_loss_males<-as.data.frame(rowMeans(t(ms_aDMCs_loss_males),na.rm = TRUE))
-colnames(dat_mean_ms_aDMCs_loss_males)<-"males"
-
-dat_mean_both_sex_aDMCs_females<-as.data.frame(rowMeans(t(both_sex_aDMCs_females),na.rm = TRUE))
-colnames(dat_mean_both_sex_aDMCs_females)<-"females" 
-
-dat_mean_both_sex_aDMCs_gain_females<-as.data.frame(rowMeans(t(both_sex_aDMCs_gain_females),na.rm = TRUE))
-colnames(dat_mean_both_sex_aDMCs_gain_females)<-"females" 
-
-dat_mean_both_sex_aDMCs_loss_females<-as.data.frame(rowMeans(t(both_sex_aDMCs_loss_females),na.rm = TRUE))
-colnames(dat_mean_both_sex_aDMCs_loss_females)<-"females"
-
-dat_mean_both_sex_aDMCs_males<-as.data.frame(rowMeans(t(both_sex_aDMCs_males),na.rm = TRUE))
-colnames(dat_mean_both_sex_aDMCs_males)<-"males"
-
-dat_mean_both_sex_aDMCs_gain_males<-as.data.frame(rowMeans(t(both_sex_aDMCs_gain_males),na.rm = TRUE))
-colnames(dat_mean_both_sex_aDMCs_gain_males)<-"males" 
-
-dat_mean_both_sex_aDMCs_loss_males<-as.data.frame(rowMeans(t(both_sex_aDMCs_loss_males),na.rm = TRUE))
-colnames(dat_mean_both_sex_aDMCs_loss_males)<-"males"
-
-save(fs_aDMCs_females,fs_aDMCs_loss_females,fs_aDMCs_gain_females,ms_aDMCs_males,ms_aDMCs_loss_males,ms_aDMCs_gain_males,both_sex_aDMCs_females,both_sex_aDMCs_loss_females,both_sex_aDMCs_gain_females,both_sex_aDMCs_males,both_sex_aDMCs_loss_males,both_sex_aDMCs_gain_males,file="Output_08_aDMCs_Beta.RData")
-
-save(dat_mean_fs_aDMCs_females,dat_mean_fs_aDMCs_loss_females,dat_mean_fs_aDMCs_gain_females,dat_mean_ms_aDMCs_males,dat_mean_ms_aDMCs_loss_males,dat_mean_ms_aDMCs_gain_males,dat_mean_both_sex_aDMCs_females,dat_mean_both_sex_aDMCs_gain_females,dat_mean_both_sex_aDMCs_loss_females,dat_mean_both_sex_aDMCs_males,dat_mean_both_sex_aDMCs_loss_males,dat_mean_both_sex_aDMCs_gain_males,file="Output_08_dat_mean_aDMCs.RData")
-
-tiff("Output_08_aDMCs_mean_methylation_dirextion.tiff", units="in", width=8, height=8, res=600,compression ='lzw') 
-par(mfrow = c(4,2),cex.lab=1.4, cex.axis=1.4, cex.main=1.4)
-hist(dat_mean_fs_aDMCs_gain_females$females,
-main="female-specific gain aDMCs in women",
-xlab="β value",
-xlim=c(0,1),
-col="darkmagenta",
-freq=FALSE
-)
-
-hist(dat_mean_fs_aDMCs_loss_females$females,
-main="female-specific loss aDMCs in women",
-xlab="β value",
-xlim=c(0,1),
-col="darkmagenta",
-freq=FALSE
-)
-
-hist(dat_mean_ms_aDMCs_gain_males$males,
-main="male-specific gain aDMCs in men",
-xlab="β value",
-xlim=c(0,1),
-col="darkmagenta",
-freq=FALSE
-)
-
-hist(dat_mean_ms_aDMCs_loss_males$males,
-main="male-specific loss aDMCs in men",
-xlab="β value",
-xlim=c(0,1),
-col="darkmagenta",
-freq=FALSE
-)
-
-hist(dat_mean_both_sex_aDMCs_gain_females$females,
-main="both-sex gain aDMCs in women",
-xlab="β value",
-xlim=c(0,1),
-col="darkmagenta",
-freq=FALSE
-)
-
-hist(dat_mean_both_sex_aDMCs_loss_females$females,
-main="both-sex loss aDMCs in women",
-xlab="β value",
-xlim=c(0,1),
-col="darkmagenta",
-freq=FALSE
-)
-
-hist(dat_mean_both_sex_aDMCs_gain_males$males,
-main="both-sex gain aDMCs in men",
-xlab="β value",
-xlim=c(0,1),
-col="darkmagenta",
-freq=FALSE
-)
-
-hist(dat_mean_both_sex_aDMCs_loss_males$males,
-main="both-sex loss aDMCs in men",
-xlab="β value",
-xlim=c(0,1),
-col="darkmagenta",
-freq=FALSE
-)
-dev.off()
-
-# Calculate the mean methylation of aVMCs
+# Calculate the mean methylation of aVMCs in females and males.
 aVMCs_females<-t(assay(betas_Xfemales))[,rownames(dat_aVMCs_females_validated)]
 aVMCs_females<-as.data.frame(aVMCs_females)
+dat_mean_aVMCs_females<-as.data.frame(rowMeans(t(aVMCs_females),na.rm = TRUE))
+colnames(dat_mean_aVMCs_females)<-"Beta value"
+
+table(dat_mean_aVMCs_females$`Beta value`<0.25) # 112
+table(dat_mean_aVMCs_females$`Beta value`>0.7) # 117
+
 aVMCs_males<-t(assay(betas_Xmales))[,rownames(dat_aVMCs_males_validated)]
 aVMCs_males<-as.data.frame(aVMCs_males)
-
-dat_mean_aVMCs_females<-as.data.frame(rowMeans(t(aVMCs_females),na.rm = TRUE))
-colnames(dat_mean_aVMCs_females)<-"females"
 dat_mean_aVMCs_males<-as.data.frame(rowMeans(t(aVMCs_males),na.rm = TRUE))
-colnames(dat_mean_aVMCs_males)<-"males"
+colnames(dat_mean_aVMCs_males)<-"Beta value"
+table(dat_mean_aVMCs_males$`Beta value`<0.25) # 2
+table(dat_mean_aVMCs_males$`Beta value`>0.7) # 4
+```
 
-save(aVMCs_females,aVMCs_males,file="Output_08_aVMCs_Beta.RData")
-save(dat_mean_aVMCs_females,dat_mean_aVMCs_males,file="Output_08_dat_mean_aDMCs.RData")
+```{r}
+# Calculate the mean methylation of 9777 CpGs in females and males.
+# Xfemales
+dat_mean_Xfemales<-as.data.frame(rowMeans(assay(betas_Xfemales),na.rm = TRUE))
+colnames(dat_mean_Xfemales)<-"Beta value"
 
+# Xmales
+dat_mean_Xmales<-as.data.frame(rowMeans(assay(betas_Xmales),na.rm = TRUE))
+colnames(dat_mean_Xmales)<-"Beta value"
+```
 
-tiff("Output_08_aVMCs_mean_methylation.tiff", units="in", width=10, height=6, res=600,compression ='lzw') 
-par(mfrow = c(1, 2),cex.lab=1.4, cex.axis=1.4, cex.main=1.4)
-hist(dat_mean_aVMCs_females$females,
-main="female-specific aVMCs in women",
-xlab="β value",
-xlim=c(0,1),
-col="darkmagenta",
-freq=FALSE
-)
+```{r}
+dat_mean_aDMCs_aVMCs_females_males<-rbind(dat_mean_Xfemales,dat_mean_aDMCs_females,dat_mean_aVMCs_females,dat_mean_Xmales,dat_mean_aDMCs_males,dat_mean_aVMCs_males)
 
-hist(dat_mean_aVMCs_males$males,
-main="male-specific aVMCs in men",
-xlab="β value",
-xlim=c(0,1),
-col="darkmagenta",
-freq=FALSE
-)
+dat_mean_aDMCs_aVMCs_females_males$symbol<-c(rep("Control",9777),rep("aDMCs",33),rep("aVMCs",987),rep("Control",9777),rep("aDMCs",316),rep("aVMCs",37))
+dat_mean_aDMCs_aVMCs_females_males$sex<-c(rep("Females",10797),rep("Males",10130))
+dat_mean_aDMCs_aVMCs_females_males$Methylation.level<-with(dat_mean_aDMCs_aVMCs_females_males,ifelse(`Beta value` < 0.25, "Hypomethylated", ifelse(`Beta value` >= 0.25 & `Beta value` < 0.7,"Intermediate methylated","Hypermethylated"))) 
+                                          
+dat_mean_aDMCs_aVMCs_females_males$symbol<-factor(dat_mean_aDMCs_aVMCs_females_males$symbol,levels = c("Control","aDMCs","aVMCs"))
+dat_mean_aDMCs_aVMCs_females_males$Methylation.level<-factor(dat_mean_aDMCs_aVMCs_females_males$Methylation.level,levels = c("Hypomethylated","Hypermethylated","Intermediate methylated"))
+dat_mean_aDMCs_aVMCs_females_males$sex<-factor(dat_mean_aDMCs_aVMCs_females_males$sex,levels = c("Males","Females"))
+save(dat_mean_aDMCs_aVMCs_females_males,file = "dat_mean_aDMCs_aVMCs_females_males.RData")
+
+tiff("Output_08_Methylation level of aDMCs and aVMCs.tiff", units="in", width=15, height=9, res=600,compression ='lzw')
+  ggplot(dat_mean_aDMCs_aVMCs_females_males) +
+  geom_bar(aes(x=symbol,fill=Methylation.level),position = "fill") +
+    labs(fill = "Methylation level") + 
+ facet_grid(~sex,switch ="y",scales = "fixed") +
+     scale_fill_manual(values=c("#3CAEA3","#F6D55C","#ED553B"))+
+     xlab("") + 
+    ylab("Fraction") +
+    theme_bw()+
+    theme(panel.spacing.x = unit(.5, "cm"),legend.position = "bottom",axis.text.x = element_text(angle = 45,hjust = 1,size = 34),axis.text.y = element_text(size = 34),axis.title.y = element_text(size = 34),legend.text = element_text(size = 29),legend.title = element_blank(),strip.text.x = element_text(size = 30))
 dev.off()
 ```
+
+
 
 
 

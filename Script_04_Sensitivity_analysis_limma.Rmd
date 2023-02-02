@@ -1,7 +1,7 @@
 ---
 title: "Script_04_Sensitivity_analysis_limma"
 author: "Yunfeng Liu"
-date: "5/18/2022"
+date: "1/16/2023"
 output: html_document
 ---
 
@@ -10,7 +10,7 @@ To see if dglm results are robust and convincing, we used another R package call
 
 ```{r}
 #set library path.
-.libPaths("~/researchdrive/yliu/BIOS_all/Functional interpretation of age-related X methylation/Rlibs")
+.libPaths("~/researchdrive/yliu/Rlibs")
 ```
 
 
@@ -35,9 +35,9 @@ fit_Xfemales <- lmFit(RIN.mvalues_Xfemales, design_sv_Xfemales)
 se_Xfemales<-fit_Xfemales$stdev.unscaled*fit_Xfemales$sigma
 tstat_Xfemales <- fit_Xfemales$coef/se_Xfemales
 pval_Xfemales<-2*pt(-abs(tstat_Xfemales),fit_Xfemales$df.residual) 
-table(pval_Xfemales[,2]<0.05) # 4493 
+table(pval_Xfemales[,2]<0.05) # 4423 
 padj_Xfemales <- p.adjust(pval_Xfemales[,2], method="bonf") 
-table(padj_Xfemales<0.05) # 1104      
+table(padj_Xfemales<0.05) # 1109      
 
 # Extract significant statistics and save them as a dataframe 
 dat_Xfemales<- as.data.frame(cbind(fit_Xfemales$coefficients[,2],se_Xfemales[,2],tstat_Xfemales[,2],pval_Xfemales[,2],padj_Xfemales))
@@ -48,9 +48,9 @@ fit_Xmales <- lmFit(RIN.mvalues_Xmales, design_sv_Xmales)
 se_Xmales<-fit_Xmales$stdev.unscaled*fit_Xmales$sigma
 tstat_Xmales <- fit_Xmales$coef/se_Xmales
 pval_Xmales<-2*pt(-abs(tstat_Xmales),fit_Xmales$df.residual) 
-table(pval_Xmales[,2]<0.05) # 4067     
+table(pval_Xmales[,2]<0.05) # 4083     
 padj_Xmales <- p.adjust(pval_Xmales[,2], method="bonf") 
-table(padj_Xmales<0.05) # 1972   
+table(padj_Xmales<0.05) # 2245   
 
 # Extract significant statistics and save them as a dataframe 
 dat_Xmales<- as.data.frame(cbind(fit_Xmales$coefficients[,2],se_Xmales[,2],tstat_Xmales[,2],pval_Xmales[,2],padj_Xmales))
@@ -65,15 +65,15 @@ set.seed(1)
 bc_Xfemales<- bacon(teststatistics=dat_Xfemales[,3])
 
 # Calculate bias and inflation
-bias(bc_Xfemales)         # -0.02     
-inflation(bc_Xfemales)    # 2.4     
+bias(bc_Xfemales)         # 0.08   
+inflation(bc_Xfemales)    # 2.3     
 
 #Extract the BACON-adjusted t-statistics and p-values
 tstats_Xfemales<-tstat(bc_Xfemales)
 pvals_Xfemales <-pval(bc_Xfemales)
-table(pvals_Xfemales<0.05)   # 1089  
+table(pvals_Xfemales<0.05)   # 1104  
 padjs_Xfemales <- as.matrix(p.adjust(pvals_Xfemales, method="bonf")) 
-table(padjs_Xfemales<0.05)  # 69    
+table(padjs_Xfemales<0.05)  # 78    
 
 # Extract BACON-adjusted effectsize.
 set.seed(1)
@@ -90,15 +90,15 @@ set.seed(1)
 bc_Xmales<- bacon(teststatistics =dat_Xmales[,3])
 
 # Calculate bias and inflation
-bias(bc_Xmales)         # -0.5    
-inflation(bc_Xmales)    # 1.3    
+bias(bc_Xmales)         # -0.06    
+inflation(bc_Xmales)    # 1.2    
 
 #Extract the BACON-adjusted t-statistics and p-values.
 tstats_Xmales<-tstat(bc_Xmales)
 pvals_Xmales <- pval(bc_Xmales)
-table(pvals_Xmales<0.05)   # 3050   
+table(pvals_Xmales<0.05)   # 3569   
 padjs_Xmales <- as.matrix(p.adjust(pvals_Xmales, method="bonf"))
-table(padjs_Xmales<0.05) # 1486  
+table(padjs_Xmales<0.05) # 1834  
 
 # Extract BACON-adjusted effectsize
 set.seed(1)
@@ -118,49 +118,39 @@ save(dat_Xfemales_bacon,dat_Xmales_bacon,file = "Output_04_aDMCs_limma_results.R
 limma_aDMCs_females<-dat_Xfemales_bacon[rownames(df_aDMCs_effectsize_BIOS),]
 df_effectsize_aDMCs_females<-data.frame(dglm=df_aDMCs_effectsize_BIOS[,1],limma=limma_aDMCs_females[,1])
 rownames(df_effectsize_aDMCs_females)<-make.names(rownames(df_aDMCs_effectsize_BIOS),unique = TRUE)
-df_effectsize_aDMCs_females$symbol<-df_aDMCs_effectsize_BIOS$symbol
-
-tiff("Output_04_Quality check of aDMCs in females.tiff", units="in", width=12, height=8, res=800,compression = 'lzw')
-ggplot(df_effectsize_aDMCs_females) +
-    aes(x = dglm,y = limma,color=symbol) +
-     geom_point(size = 2, alpha = 0.5) + 
-     geom_vline(aes(xintercept=0)) +
-     geom_hline(aes(yintercept=0)) +
-     geom_abline(slope=1, intercept = 0)+
-  scale_x_continuous(limits=c(-0.04, 0.04))+
-  scale_y_continuous(limits=c(-0.04, 0.04))+
-  scale_color_discrete(name="aDMCs",breaks=c( "female-specific","male-specific","sex-independent"),labels=c( "female-specific:34CpGs","male-specific:1490CpGs","sex-independent:32CpGs"))+
-  ggtitle("Females")+
-  theme(plot.title = 
-element_text(hjust = 0.5),text = element_text(size = 20,hjust = 0.5))+
-    labs(x="effect size in dglm",y="effect size in limma")
-dev.off()
+df_effectsize_aDMCs_females$aDMCs<-df_aDMCs_effectsize_BIOS$aDMCs
 
 ## Compare aDMCs effectsize between dglm and limma in males
 limma_aDMCs_males<-dat_Xmales_bacon[rownames(df_aDMCs_effectsize_BIOS),]
 df_effectsize_aDMCs_males<-data.frame(dglm=df_aDMCs_effectsize_BIOS[,2],limma=limma_aDMCs_males[,1])
 rownames(df_effectsize_aDMCs_males)<-make.names(rownames(df_aDMCs_effectsize_BIOS),unique = TRUE)
-df_effectsize_aDMCs_males$symbol<-df_aDMCs_effectsize_BIOS$symbol
+df_effectsize_aDMCs_males$aDMCs<-df_aDMCs_effectsize_BIOS$aDMCs
 
-tiff("Output_04_Quality check of aDMCs in males.tiff", units="in", width=12, height=8, res=800,compression = 'lzw')
-ggplot(df_effectsize_aDMCs_males) +
-    aes(x = dglm,y = limma,color=symbol) +
-     geom_point(size = 2, alpha = 0.5) + 
+save(df_effectsize_aDMCs_females,df_effectsize_aDMCs_males,file="Output_04_Sensitivity analysis.RData")
+
+# Scatter plot of aDMCs effect size between DGLM and limma
+df_effectsize_aDMCs_females$sex<-"Females"
+df_effectsize_aDMCs_males$sex<-"Males"
+df_effectsize_aDMCs<-rbind(df_effectsize_aDMCs_females,df_effectsize_aDMCs_males)
+df_effectsize_aDMCs$aDMCs<-factor(df_effectsize_aDMCs$aDMCs,levels = unique(df_effectsize_aDMCs$aDMCs))
+df_effectsize_aDMCs$sex<-factor(df_effectsize_aDMCs$sex,levels = c("Males","Females"))
+
+tiff("Figure_S2_Quality check of aDMCs.tiff", units="in", width=14, height=10, res=600,compression = 'lzw')
+ggplot(df_effectsize_aDMCs) +
+    aes(x = dglm,y = limma,color=aDMCs) +
+     theme_grey(base_size = 18) +
+      facet_grid(~sex,switch ="y",scales = "fixed") +
+     geom_point(size = 3, alpha = 0.5) + 
      geom_vline(aes(xintercept=0)) +
      geom_hline(aes(yintercept=0)) +
      geom_abline(slope=1, intercept = 0)+
   scale_x_continuous(limits=c(-0.04, 0.04))+
   scale_y_continuous(limits=c(-0.04, 0.04))+
-  scale_color_discrete(name="aDMCs",breaks=c( "female-specific","male-specific","sex-independent"),labels=c( "female-specific:34CpGs","male-specific:1490CpGs","sex-independent:32CpGs"))+
-  ggtitle("Males")+
-  theme(plot.title = 
-element_text(hjust = 0.5),text = element_text(size = 20,hjust = 0.5))+
-    labs(x="effect size in dglm",y="effectsize in limma")
-dev.off() 
-```
-
-```{r}
-save(df_effectsize_aDMCs_females,df_effectsize_aDMCs_males,file="Output_04_Sensitivity analysis.RData")
+  scale_color_manual(values = c("#F08080", "#56B4E9", "#32CD32"))+
+  theme_bw()+
+  theme(panel.spacing.x = unit(.5, "cm"),legend.position = "bottom",legend.text =element_text(size = 30),legend.title = element_text(size = 30),axis.title.x = element_text(size = 30),axis.title.y = element_text(size = 30),axis.text.x = element_text(size = 30,angle = 45,hjust = 1),axis.text.y = element_text(size = 30),strip.text.x = element_text(size = 23))+
+    labs(x="Effect size in dglm",y="Effect size in limma")
+dev.off()
 ```
 
 

@@ -1,0 +1,97 @@
+---
+title: "Script_11_DMR_identification"
+author: "Yunfeng"
+date: "1/16/2023"
+output: html_document
+---
+
+```{r}
+#set library path.
+.libPaths("~/researchdrive/yliu/Rlibs")
+```
+
+```{r}
+# load packages
+library(DNAmArray)
+```
+
+
+```{r}
+# load data
+load(file = "Output_05_Catalogue_aDMCs_validated.RData")
+load(file = "Output_06_Catalogue_aVMCs_validated.RData")
+load(file = "Output_07_450K_chrX_annotation.RData")
+```
+
+```{r}
+# Identify DMR from males aDMCs
+ann450K_chrX<-as.data.frame(ann450K_chrX)
+ann450K_males_aDMCs<-ann450K_chrX[rownames(dat_aDMCs_males_validated),]
+ann450K_non_aDMCs<-ann450K_chrX[!rownames(ann450K_chrX) %in% rownames(dat_aDMCs_males_validated),]
+ann450K_all_aDMCs_males<-rbind(ann450K_males_aDMCs,ann450K_non_aDMCs)
+
+dmrData_males_aDMCs<-data.frame(ann450K_all_aDMCs_males$Chromosome,ann450K_all_aDMCs_males$start)
+dmrData_males_aDMCs$crit<-c(rep(1,316),rep(0,9461))
+colnames(dmrData_males_aDMCs)<-c("chromosome","start","crit")
+dmrData_males_aDMCs<-dmrData_males_aDMCs[order(dmrData_males_aDMCs$start),]
+DMRs_males_aDMCs=DMRfinder(data=dmrData_males_aDMCs,chromosome ="X",mismatches=3, icd=1000,illumina = FALSE)   # identify 17 DMR
+write.csv(ann450K_all_aDMCs_males,file = "ann450K_all_aDMCs_males.csv")
+write.csv(dmrData_males_aDMCs,file = "dmrData_males_aDMCs.csv")
+write.csv(DMRs_males_aDMCs,file = "DMRs_males_aDMCs.csv")
+```
+
+```{r}
+# Identify DMR from females aDMCs
+ann450K_chrX<-as.data.frame(ann450K_chrX)
+ann450K_females_aDMCs<-ann450K_chrX[rownames(dat_aDMCs_females_validated),]
+ann450K_non_aDMCs<-ann450K_chrX[!rownames(ann450K_chrX) %in% rownames(dat_aDMCs_females_validated),]
+ann450K_all_aDMCs_females<-rbind(ann450K_females_aDMCs,ann450K_non_aDMCs)
+
+dmrData_females_aDMCs<-data.frame(ann450K_all_aDMCs_females$Chromosome,ann450K_all_aDMCs_females$start)
+dmrData_females_aDMCs$crit<-c(rep(1,33),rep(0,9744))
+colnames(dmrData_females_aDMCs)<-c("chromosome","start","crit")
+dmrData_females_aDMCs<-dmrData_females_aDMCs[order(dmrData_females_aDMCs$start),]
+DMRs_females_aDMCs=DMRfinder(data=dmrData_females_aDMCs,chromosome ="X",mismatches=3, icd=1000,illumina = FALSE)   # No DMRs identified
+```
+
+
+```{r}
+# Identify DMR from females aVMCs
+ann450K_chrX<-as.data.frame(ann450K_chrX)
+ann450K_females_aVMCs<-ann450K_chrX[rownames(dat_aVMCs_females_validated),]
+ann450K_non_aVMCs<-ann450K_chrX[!rownames(ann450K_chrX) %in% rownames(dat_aVMCs_females_validated),]
+ann450K_all_aVMCs_females<-rbind(ann450K_females_aVMCs,ann450K_non_aVMCs)
+
+dmrData_females_aVMCs<-data.frame(ann450K_all_aVMCs_females$Chromosome,ann450K_all_aVMCs_females$start)
+dmrData_females_aVMCs$crit<-c(rep(1,987),rep(0,8790))
+colnames(dmrData_females_aVMCs)<-c("chromosome","start","crit")
+dmrData_females_aVMCs<-dmrData_females_aVMCs[order(dmrData_females_aVMCs$start),]
+DMRs_females_aVMCs=DMRfinder(data=dmrData_females_aVMCs,chromosome ="X",mismatches=3, icd=1000,illumina = FALSE)   # 72 DMRs identified
+
+write.csv(ann450K_all_aVMCs_females,file = "ann450K_all_aVMCs_females.csv")
+write.csv(dmrData_females_aVMCs,file = "dmrData_females_aVMCs.csv")
+write.csv(DMRs_females_aVMCs,file = "DMRs_females_aVMCs.csv")
+```
+
+```{r}
+# Identify DMR from males aVMCs
+ann450K_chrX<-as.data.frame(ann450K_chrX)
+ann450K_males_aVMCs<-ann450K_chrX[rownames(dat_aVMCs_males_validated),]
+ann450K_non_aVMCs<-ann450K_chrX[!rownames(ann450K_chrX) %in% rownames(dat_aVMCs_males_validated),]
+ann450K_all_aVMCs_males<-rbind(ann450K_males_aVMCs,ann450K_non_aVMCs)
+
+dmrData_males_aVMCs<-data.frame(ann450K_all_aVMCs_males$Chromosome,ann450K_all_aVMCs_males$start)
+dmrData_males_aVMCs$crit<-c(rep(1,37),rep(0,9740))
+colnames(dmrData_males_aVMCs)<-c("chromosome","start","crit")
+dmrData_males_aVMCs<-dmrData_males_aVMCs[order(dmrData_males_aVMCs$start),]
+DMRs_males_aVMCs=DMRfinder(data=dmrData_males_aVMCs,chromosome ="X",mismatches=3, icd=1000,illumina = FALSE)   # No DMRs identified
+```
+
+
+
+
+
+
+
+
+

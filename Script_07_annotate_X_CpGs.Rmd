@@ -1,13 +1,35 @@
 ---
 title: "annotate_450k_X_CpGs"
 author: "Yunfeng"
-date: "5/30/2022"
+date: "1/16/2023"
 output: html_document
 ---
+#Script information
+
+This script was written to annotate X-chromosome CpGs of the Illumina Infinium 450K array with CGI features and XCI status.
+
+#CGI feature annotation
+
+CGI-centric annotation was split in 3 regions:
+1)	CGIs, as annotated by UCSC (hg19).
+2)	Shores: 2 kb regions flanking the CGIs (both up- and downstream).
+3)	Non-CGI: none of the above.
+
+Schematic representation of the CGI-centric annotation:
+
+----------------------|-------|-------|-------|----------------------
+       Non-CGI        | Shore |  CGI  | Shore |        Non-CGI
+                      | 2 kb  |       | 2 kb  |
+----------------------|-------|-------|-------|----------------------
+
+# XCI status annotation
+XCI status annotation were based on reliable meta-status calls[1], which integrated three published studies and resulted in genes classified into three categories: subject to XCI, escape XCI and variably escape XCI.
+
+[1] Balaton BP, Brown CJ: Contribution of genetic and epigenetic changes to escape from X-chromosome inactivation. Epigenetics Chromatin 2021, 14:30.
 
 ```{r}
 #set library path.
-.libPaths("~/researchdrive/yliu/BIOS_all/Functional interpretation of age-related X methylation/Rlibs")
+.libPaths("~/researchdrive/yliu/Rlibs")
 ```
 
 
@@ -23,7 +45,7 @@ library(data.table)
 
 ```{r}
 #Load data.
-load(file ="./Output/Output_01_chrX_chrY.RData")
+load(file ="./Output/Output_01_chrX.RData")
 
 #Make a GRanges object containing features of all 450K CpGs.
 ann450K <- features(FDb.InfiniumMethylation.hg19)
@@ -111,11 +133,11 @@ ann450K_chrX
 
 
 ```{r}
-# XCI annotation based on TSS.
-load(file="Input_02_TSS.XCI.Status.RData")
-XCI.annotation<-XCI.annotation[names(ann450K_chrX),]
-ann450K_chrX$XCI.Status<-XCI.annotation$TSS.Status
-ann450K_chrX$Distance<-XCI.annotation$Distance
+# XCI annotation based on meta calls
+load(file="Input_07_TSS.XCI.Status.meta.calls.RData")
+XCI.annotation<-Annotation.TSS.meta.calls[names(ann450K_chrX),]
+ann450K_chrX$XCI.Status.meta.calls<-XCI.annotation$TSS.Status
+ann450K_chrX$Distance.meta.calls<-XCI.annotation$Distance
 ```
 
 
