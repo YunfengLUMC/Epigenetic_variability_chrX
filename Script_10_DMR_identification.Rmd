@@ -4,6 +4,9 @@ author: "Yunfeng"
 date: "1/16/2023"
 output: html_document
 ---
+#Script information
+
+This script was written to identify differentially methylated regions (DMRs) on replicated aDMCs and aVMCs.
 
 ```{r}
 #set library path.
