@@ -1,5 +1,5 @@
 # Epigenetic_variability_chrX
-This repository contains the scripts (R Markdown files) that were used for the analyses accompanying the manuscript "X chromosome methylation in females displays increased variability with age at regions subject to X-chromosome inactivation".
+This repository contains the scripts (R Markdown files) that were used for the analyses accompanying the manuscript "The inactive X chromosome accumulates widespread epigenetic variability with age".
 
 In this manuscript, we systematic annotated, interpretated of age-related differences in DNA methylation at the X chromosome at the level of both differences in mean (age-related differentially methylated CpGs, aDMCs) and differences in variability (age-related variably methylated CpGs, aVMCs).
 
