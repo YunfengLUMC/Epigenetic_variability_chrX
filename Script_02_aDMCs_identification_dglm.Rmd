@@ -1,0 +1,432 @@
+---
+title: "Script_02_aDMCs_identification_dglm"
+author: "Yunfeng Liu"
+date: "1/16/2023"
+output: html_document
+---
+# Script information 
+
+DGLM(Double generalized linear model) is a full parametric method that can be used to detect variance effect and mean effects at the same time. It include two parts:One is a generalized linear model,the other is a dispersion model. Specifically,the mean effects are estimated by a linear model,and then the varaince effects are estimated by dispersion sub-model.It works iteratively between models until convergence.
+
+Here,using DGLM,we performed EWAS(Epigenome-wide association study) to identify two different type of age-related DNA methylation changes on X chromosome: aDMCs(age-related differentially methylated CpGs) and aVMCs(age-related variable methylated CpGs).
+
+```{r}
+#set library path.
+.libPaths("~/researchdrive/yliu/Rlibs")
+```
+
+```{r}
+#Load data.
+load(file ="./Output/Output_01/Output_01_chrX_mvalues.RData")
+load(file ="./Output/Output_01/Output_01_chrX_betas.RData")
+```
+
+```{r}
+#Load all necessary libraries.
+library(BBMRIomics)
+library(sva)
+library(irlba)
+library(dglm)
+library(tidyverse)
+library(bacon)
+```
+
+```{r}
+## Combat on sexes together 
+# Since we don't want combat to make changes based on age or sex so we include those as covariates in the model
+mvalues_chrX<-cbind(mvalues_Xfemales,mvalues_Xmales)
+dim(mvalues_chrX) # 9777 4031
+
+batch_chrX= factor(colData(mvalues_chrX)$biobank_id)
+mod_chrX = model.matrix(~sampling_age + factor(sex), data=colData(mvalues_chrX))
+
+mvalues_chrX_combat = ComBat(dat=assay(mvalues_chrX),batch=batch_chrX, mod=mod_chrX,par.prior=T)
+save(mvalues_chrX_combat,file = "Output_02_mvalues_chrX_combat.RData")
+```
+
+```{r}
+# Split Mvalue.combatted_chrX based on sexes
+mvalues_Xfemales_combat<-mvalues_chrX_combat[,1:2343]
+mvalues_Xmales_combat<-mvalues_chrX_combat[,2344:4031]
+```
+
+```{r}
+# rank-inverse normal(RIN) transformation for Xfemales and Xmales separately.
+ RIN <- function(x) {
+  y <- rank(x, NA)
+  y <- ppoints(y)[y]
+  y <- qnorm(y)
+  x[!is.na(x)] <- y
+  x
+ }
+
+RIN.mvalues_Xfemales <- t(apply(mvalues_Xfemales_combat, 1, RIN))
+RIN.mvalues_Xmales <- t(apply(mvalues_Xmales_combat, 1, RIN))
+```
+
+
+```{r}
+# Create PCs of the DNA methylation data for Xfemales, Xmales.
+pc_Xfemales<- prcomp_irlba(t(RIN.mvalues_Xfemales), n=10)
+pc_Xmales<- prcomp_irlba(t(RIN.mvalues_Xmales), n=10)
+
+# Screenplot drawing
+summary(pc_Xfemales)
+png("Output_02_screenplot_Xfemales.png")
+screeplot(pc_Xfemales,type = "lines")
+dev.off()
+
+summary(pc_Xmales)
+png("Output_02_screenplot_Xmales.png")
+screeplot(pc_Xmales,type = "lines")
+dev.off()
+```
+
+
+```{r}
+#### I.For X-mthylation changes with age in females
+## Change some covariates into factor if necessary
+mvalues_Xfemales$biobank_id<-factor(mvalues_Xfemales$biobank_id)
+mvalues_Xfemales$sentrix_position<-factor(mvalues_Xfemales$sentrix_position)
+mvalues_Xfemales$sample_plate<-factor(mvalues_Xfemales$sample_plate)
+
+## Collect all potential covariates(Xfemales)
+metadata(mvalues_Xfemales)$formula<- ~ sampling_age + biobank_id + CD8T_predicted + CD4T_predicted + NK_predicted + Bcell_predicted + Mono_predicted + sentrix_position + sample_plate
+Covariates_Xfemales<- get_all_vars(metadata(mvalues_Xfemales)$formula, data=colData(mvalues_Xfemales))
+
+#Select covariates without NAs(Xfemales).
+nas_Xfemales <- apply(Covariates_Xfemales, 1, anyNA)
+mvalues_Xfemales <- mvalues_Xfemales[, !nas_Xfemales]
+dim(mvalues_Xfemales) # 9777 2343
+
+#### II.For X-mthylation changes with age in males 
+## Change some covariates into factor if necessary
+mvalues_Xmales$biobank_id<-factor(mvalues_Xmales$biobank_id)
+mvalues_Xmales$sentrix_position<-factor(mvalues_Xmales$sentrix_position)
+mvalues_Xfemales$sample_plate<-factor(mvalues_Xfemales$sample_plate)
+
+# Collect all potential covariates(Xmales)
+metadata(mvalues_Xmales)$formula<- ~ sampling_age + biobank_id+ CD8T_predicted + CD4T_predicted + NK_predicted + Bcell_predicted + Mono_predicted + sentrix_position + sample_plate
+Covariates_Xmales<- get_all_vars(metadata(mvalues_Xmales)$formula, data=colData(mvalues_Xmales))
+
+#Select covariates without NAs (Xmales).
+nas_Xmales <- apply(Covariates_Xmales, 1, anyNA)
+mvalues_Xmales <- mvalues_Xmales[, !nas_Xmales]
+dim(mvalues_Xmales) # 9777 1688
+```
+
+
+```{r}
+# Prepare SVA
+#Xfemales
+## null model:only exclude interest variable
+design0_Xfemales = model.matrix(~.-sampling_age,data=Covariates_Xfemales)
+## Full model:include all covarites
+design_Xfemales <- model.matrix(metadata(mvalues_Xfemales)$formula, data=Covariates_Xfemales)
+
+# Estimate female latent factors by SVA
+svobj_Xfemales = sva(RIN.mvalues_Xfemales,design_Xfemales,design0_Xfemales,n.sv=5)
+sv_Xfemales <- as.data.frame(svobj_Xfemales$sv)
+colnames(sv_Xfemales) <- c('SV1', 'SV2', 'SV3', 'SV4', 'SV5')
+
+#Xmales
+## null model:only exclude interest variable
+design0_Xmales = model.matrix(~.-sampling_age,data=Covariates_Xmales)
+## Full model:include all covarites
+design_Xmales<- model.matrix(metadata(mvalues_Xmales)$formula, data=Covariates_Xmales)
+
+# Estimate male latent factors by SVA
+svobj_Xmales = sva(RIN.mvalues_Xmales,design_Xmales,design0_Xmales,n.sv=5)
+sv_Xmales <- as.data.frame(svobj_Xmales$sv)
+colnames(sv_Xmales) <- c('SV1', 'SV2', 'SV3', 'SV4', 'SV5')
+```
+
+
+```{r}
+# Add estimated latent factors to covariates dataframe and design matrix. 
+#Xfemales
+Covariates_sv_Xfemales<-cbind(Covariates_Xfemales,sv_Xfemales)
+design_sv_Xfemales<-cbind(design_Xfemales,sv_Xfemales)
+
+#Xmales
+Covariates_sv_Xmales<-cbind(Covariates_Xmales,sv_Xmales)
+design_sv_Xmales<-cbind(design_Xmales,sv_Xmales)
+
+save(RIN.mvalues_Xfemales,RIN.mvalues_Xmales,design_sv_Xfemales,design_sv_Xmales,Covariates_sv_Xfemales,Covariates_sv_Xmales,file = "Output_02_sex-separate_analysis_preparation.RData")
+```
+
+
+```{r}
+#### Construct a Function called runDGLM for Xfemales and Xmales separately.
+## Identify aDMCs in females.
+runDGLM_Xfemales <- function(x)
+{
+  dat_Xfemales_dglm <- matrix(nrow=nrow(x), ncol=9)
+  colnames(dat_Xfemales_dglm)<-c("cgID","effectsize.linear","std.error.linear","t.linear","p.linear","effectsize.disp","std.error.disp","t.disp","p.disp")
+  for(CpG in 1:nrow(x))
+  {
+    print(CpG) #to check progress
+    probe <- rownames(x)[CpG]
+    tempdata <- data.frame(sampling_age=Covariates_sv_Xfemales[,1], data = x[probe,], biobank_id=Covariates_sv_Xfemales[,2], CD8T_predicted=Covariates_sv_Xfemales[,3], CD4T_predicted=Covariates_sv_Xfemales[,4], NK_predicted=Covariates_sv_Xfemales[,5], Bcell_predicted=Covariates_sv_Xfemales[,6], Mono_predicted=Covariates_sv_Xfemales[,7], sentrix_position=Covariates_sv_Xfemales[,8],sample_plate=Covariates_sv_Xfemales[,9],SV1=Covariates_sv_Xfemales[,10], SV2=Covariates_sv_Xfemales[,11], SV3=Covariates_sv_Xfemales[,12], SV4=Covariates_sv_Xfemales[,13], SV5=Covariates_sv_Xfemales[,14])
+    
+    fit_Xfemales <- tryCatch({ dglm(formula = data ~ sampling_age + biobank_id + CD8T_predicted + CD4T_predicted + NK_predicted + Bcell_predicted + Mono_predicted + sentrix_position + sample_plate + SV1 + SV2 + SV3 + SV4 + SV5, dformula = ~ sampling_age, data=tempdata, family = gaussian(link = identity))},error=identity)
+    if(is.null(fit_Xfemales$message)){ #good
+      #extract info about the linear model
+      effectsize.linear <- summary(fit_Xfemales)$coefficients[2,1]
+      std.error.linear<-summary(fit_Xfemales)$coefficients[2,2]
+      t.value.linear <-summary(fit_Xfemales)$coefficients[2,3]
+      p.value.linear <- summary(fit_Xfemales)$coefficients[2,4]
+      
+      #extract info about the dispersion model
+      effectsize.disp <- summary(fit_Xfemales$dispersion.fit)$coefficients[2]
+      std.error.disp<-summary(fit_Xfemales$dispersion.fit)$coefficients[4]
+      t.value.disp <- summary(fit_Xfemales$dispersion.fit)$coefficients[6]
+      p.value.disp <- summary(fit_Xfemales$dispersion.fit)$coefficients[8]
+      
+      # Summary statistics Output
+      out <- matrix(c(probe,effectsize.linear,std.error.linear,t.value.linear,p.value.linear,effectsize.disp,std.error.disp,t.value.disp,p.value.disp), ncol=9)
+      dat_Xfemales_dglm[CpG,] <- out
+    }else{                  #bad
+      print("Didn't converge")
+      out <- matrix(c(probe, fit_Xfemales$message, rep(NA, times = 7)), ncol=9)
+      dat_Xfemales_dglm[CpG,] <- out
+    }
+    
+  }
+  return(dat_Xfemales_dglm)
+}
+
+# Run runDGLM function
+DGLM_Xfemales<- runDGLM_Xfemales(RIN.mvalues_Xfemales)
+DGLM_Xfemales<-data.frame(DGLM_Xfemales) 
+rownames(DGLM_Xfemales)<-make.names(DGLM_Xfemales$cgID,unique=TRUE)
+DGLM_Xfemales<-DGLM_Xfemales[,2:9]
+DGLM_Xfemales_errors<-subset(DGLM_Xfemales,is.na(DGLM_Xfemales$t.linear)) # No errors(all CpGs converge)
+DGLM_Xfemales_converge<-DGLM_Xfemales
+
+# Convert each column to numerical variable.
+DGLM_Xfemales_converge<-as.data.frame(lapply(DGLM_Xfemales_converge,as.numeric)) 
+rownames(DGLM_Xfemales_converge)<-make.names(rownames(DGLM_Xfemales),unique=TRUE) 
+save(DGLM_Xfemales_converge,file = "Output_02_DGLM_Xfemales_converge.RData")
+```
+
+```{r}
+## Correct bias and inflation for linear model.
+# Xfemales
+set.seed(1)
+bc_DGLM_Xfemales<- bacon(DGLM_Xfemales_converge[,3])
+
+# Calculate bias and inflation
+bias(bc_DGLM_Xfemales)         # 0.08  
+inflation(bc_DGLM_Xfemales)    # 2.4
+
+# Save histogram plot of test statistics 
+tiff("Output_02_Bacon_DGLM_Xfemales.tiff", units="in", width=8, height=6, res=600,compression = 'lzw')
+fit(bc_DGLM_Xfemales,xlab="t-statistics",main="aDMCs in females",n=100)
+dev.off()
+
+#Extract the BACON-adjusted t-statistics and p-values
+tstats_DGLM_Xfemales<-tstat(bc_DGLM_Xfemales)
+pvals_DGLM_Xfemales <-pval(bc_DGLM_Xfemales)
+table(pvals_DGLM_Xfemales<0.05)   # 1095  
+padjs_DGLM_Xfemales <- as.matrix(p.adjust(pvals_DGLM_Xfemales, method="bonf")) 
+table(padjs_DGLM_Xfemales<0.05)  # 80   
+
+# Extract BACON-adjusted effectsize.
+set.seed(1)
+bc_DGLM_Xfemales_es<-bacon(NULL,DGLM_Xfemales_converge[,1],DGLM_Xfemales_converge[,2])
+es_DGLM_Xfemales<-es(bc_DGLM_Xfemales_es)
+
+# Extract BACON-adjusted standard error.
+set.seed(1)
+bc_DGLM_Xfemales_se<-bacon(NULL,DGLM_Xfemales_converge[,1],DGLM_Xfemales_converge[,2])
+se_DGLM_Xfemales<-se(bc_DGLM_Xfemales_se)
+
+# Summary Bacon statistics
+dat_DGLM_Xfemales_bacon_linear<-as.data.frame(cbind(es_DGLM_Xfemales,se_DGLM_Xfemales,tstats_DGLM_Xfemales,pvals_DGLM_Xfemales,padjs_DGLM_Xfemales))
+colnames(dat_DGLM_Xfemales_bacon_linear)<-c("bacon_effectsize_linear","bacon_std.error_linear","bacon_tstatistics_linear","bacon_pval_linear","bacon_p.adj_linear")
+rownames(dat_DGLM_Xfemales_bacon_linear)<-make.names(rownames(DGLM_Xfemales_converge),unique = TRUE)
+```
+
+```{r}
+## Identify aDMCs in males.
+runDGLM_Xmales <- function(x)
+{
+  dat_Xmales_dglm <- matrix(nrow=nrow(x), ncol=9)
+  colnames(dat_Xmales_dglm)<-c("cgID","effectsize.linear","std.error.linear","t.linear","p.linear","effectsize.disp","std.error.disp","t.disp","p.disp")
+  for(CpG in 1:nrow(x))
+  {
+    print(CpG) #to check progress
+    probe <- rownames(x)[CpG]
+    tempdata <- data.frame(sampling_age=Covariates_sv_Xmales[,1], data = x[probe,], biobank_id=Covariates_sv_Xmales[,2], CD8T_predicted=Covariates_sv_Xmales[,3], CD4T_predicted=Covariates_sv_Xmales[,4], NK_predicted=Covariates_sv_Xmales[,5], Bcell_predicted=Covariates_sv_Xmales[,6], Mono_predicted=Covariates_sv_Xmales[,7], sentrix_position=Covariates_sv_Xmales[,8],sample_plate=Covariates_sv_Xmales[,9],SV1=Covariates_sv_Xmales[,10], SV2=Covariates_sv_Xmales[,11], SV3=Covariates_sv_Xmales[,12], SV4=Covariates_sv_Xmales[,13], SV5=Covariates_sv_Xmales[,14])
+    
+    fit_Xmales <- tryCatch({ dglm(formula = data ~ sampling_age + biobank_id + CD8T_predicted + CD4T_predicted + NK_predicted + Bcell_predicted + Mono_predicted + sentrix_position + sample_plate + SV1 + SV2 + SV3 + SV4 + SV5, dformula = ~ sampling_age, data=tempdata, family = gaussian(link = identity))},error=identity)
+    if(is.null(fit_Xmales$message)){ #good
+      #extract info about the linear model
+      effectsize.linear <- summary(fit_Xmales)$coefficients[2,1]
+      std.error.linear<-summary(fit_Xmales)$coefficients[2,2]
+      t.value.linear <-summary(fit_Xmales)$coefficients[2,3]
+      p.value.linear <- summary(fit_Xmales)$coefficients[2,4]
+      
+      #extract info about the dispersion model
+      effectsize.disp <- summary(fit_Xmales$dispersion.fit)$coefficients[2]
+      std.error.disp<-summary(fit_Xmales$dispersion.fit)$coefficients[4]
+      t.value.disp <- summary(fit_Xmales$dispersion.fit)$coefficients[6]
+      p.value.disp <- summary(fit_Xmales$dispersion.fit)$coefficients[8]
+      
+      # Summary statistics Output
+      out <- matrix(c(probe,effectsize.linear,std.error.linear,t.value.linear,p.value.linear,effectsize.disp,std.error.disp,t.value.disp,p.value.disp), ncol=9)
+      dat_Xmales_dglm[CpG,] <- out
+    }else{                  #bad
+      print("Didn't converge")
+      out <- matrix(c(probe, fit_Xmales$message, rep(NA, times = 7)), ncol=9)
+      dat_Xmales_dglm[CpG,] <- out
+    }
+    
+  }
+  return(dat_Xmales_dglm)
+}
+
+# Run runDGLM function
+DGLM_Xmales<- runDGLM_Xmales(RIN.mvalues_Xmales)
+DGLM_Xmales<-data.frame(DGLM_Xmales) 
+rownames(DGLM_Xmales)<-make.names(DGLM_Xmales$cgID,unique=TRUE)
+DGLM_Xmales<-DGLM_Xmales[,2:9]
+DGLM_Xmales_errors<-subset(DGLM_Xmales,is.na(DGLM_Xmales$t.linear)) # No errors(all CpGs converge)
+DGLM_Xmales_converge<-DGLM_Xmales
+
+# Convert each column to numerical variable.
+DGLM_Xmales_converge<-as.data.frame(lapply(DGLM_Xmales_converge,as.numeric)) 
+rownames(DGLM_Xmales_converge)<-make.names(rownames(DGLM_Xmales),unique=TRUE)
+save(DGLM_Xmales_converge,file = "Output_02_DGLM_Xmales_converge.RData")
+```
+
+```{r}
+## Correct bias and inflation for linear model.
+# Xmales
+set.seed(1)
+bc_DGLM_Xmales<- bacon(DGLM_Xmales_converge[,3])
+
+# Calculate bias and inflation
+bias(bc_DGLM_Xmales)         # -0.06   
+inflation(bc_DGLM_Xmales)    # 1.2
+
+# Save histogram plot of test statistics 
+tiff("Output_02_Bacon_DGLM_Xmales.tiff", units="in", width=8, height=6, res=600,compression = 'lzw')
+fit(bc_DGLM_Xmales,xlab="t-statistics",main="aDMCs in males",n=100)
+dev.off()
+
+#Extract the BACON-adjusted t-statistics and p-values
+tstats_DGLM_Xmales<-tstat(bc_DGLM_Xmales)
+pvals_DGLM_Xmales <-pval(bc_DGLM_Xmales)
+table(pvals_DGLM_Xmales<0.05)   # 3572  
+padjs_DGLM_Xmales <- as.matrix(p.adjust(pvals_DGLM_Xmales, method="bonf")) 
+table(padjs_DGLM_Xmales<0.05)  # 1837   
+
+# Extract BACON-adjusted effectsize.
+set.seed(1)
+bc_DGLM_Xmales_es<-bacon(NULL,DGLM_Xmales_converge[,1],DGLM_Xmales_converge[,2])
+es_DGLM_Xmales<-es(bc_DGLM_Xmales_es)
+
+# Extract BACON-adjusted standard error.
+set.seed(1)
+bc_DGLM_Xmales_se<-bacon(NULL,DGLM_Xmales_converge[,1],DGLM_Xmales_converge[,2])
+se_DGLM_Xmales<-se(bc_DGLM_Xmales_se)
+
+# Summary Bacon statistics
+dat_DGLM_Xmales_bacon_linear<-as.data.frame(cbind(es_DGLM_Xmales,se_DGLM_Xmales,tstats_DGLM_Xmales,pvals_DGLM_Xmales,padjs_DGLM_Xmales)) 
+colnames(dat_DGLM_Xmales_bacon_linear)<-c("bacon_effectsize_linear","bacon_std.error_linear","bacon_tstatistics_linear","bacon_pval_linear","bacon_p.adj_linear")
+rownames(dat_DGLM_Xmales_bacon_linear)<-make.names(rownames(DGLM_Xmales_converge),unique = TRUE)
+```
+
+```{r}
+# Extract linear effect size and standard error
+df_effectsize_linear<-as.data.frame(cbind(dat_DGLM_Xfemales_bacon_linear[,1],dat_DGLM_Xmales_bacon_linear[,1]))
+colnames(df_effectsize_linear)<-c("females","males")
+rownames(df_effectsize_linear)<-make.names(rownames(dat_DGLM_Xfemales_bacon_linear), unique=TRUE)
+
+df_se_linear<-as.data.frame(cbind(dat_DGLM_Xfemales_bacon_linear[,2],dat_DGLM_Xmales_bacon_linear[,2]))
+colnames(df_se_linear)<-c("females","males")
+rownames(df_se_linear)<-make.names(rownames(dat_DGLM_Xfemales_bacon_linear), unique=TRUE)
+
+# Keep significant aDMCs as dataframe (bacon_p.adj<0.05).
+dat_DGLM_Xfemales_bacon_linear<-filter(dat_DGLM_Xfemales_bacon_linear,bacon_p.adj_linear<0.05) # 80
+dat_DGLM_Xfemales_bacon_linear_up<-filter(dat_DGLM_Xfemales_bacon_linear,bacon_effectsize_linear>0) # 39
+dat_DGLM_Xfemales_bacon_linear_down<-filter(dat_DGLM_Xfemales_bacon_linear,bacon_effectsize_linear<0) # 41
+
+
+dat_DGLM_Xmales_bacon_linear<-filter(dat_DGLM_Xmales_bacon_linear,bacon_p.adj_linear<0.05) # 1837
+dat_DGLM_Xmales_bacon_linear_up<-filter(dat_DGLM_Xmales_bacon_linear,bacon_effectsize_linear>0) # 1119
+dat_DGLM_Xmales_bacon_linear_down<-filter(dat_DGLM_Xmales_bacon_linear,bacon_effectsize_linear<0) # 718
+
+save(dat_DGLM_Xfemales_bacon_linear,dat_DGLM_Xfemales_bacon_linear_down,dat_DGLM_Xfemales_bacon_linear_up,dat_DGLM_Xmales_bacon_linear,dat_DGLM_Xmales_bacon_linear_down,dat_DGLM_Xmales_bacon_linear_up,file = "Output_02_Catalogue_aDMCs_BIOS.RData")
+```
+
+```{r}
+# Check how many aDMCs identified only in females/males/both
+# both-sex CpGs:47
+both_sex_aDMCs_BIOS<-intersect(rownames(dat_DGLM_Xfemales_bacon_linear),rownames(dat_DGLM_Xmales_bacon_linear))
+
+# female-specific CpGs:33
+fs_aDMCs_BIOS<-dat_DGLM_Xfemales_bacon_linear[!rownames(dat_DGLM_Xfemales_bacon_linear)%in%both_sex_aDMCs_BIOS,]
+
+# male-specific CpGs:1790
+ms_aDMCs_BIOS<-dat_DGLM_Xmales_bacon_linear[!rownames(dat_DGLM_Xmales_bacon_linear)%in%both_sex_aDMCs_BIOS,]
+```
+
+```{r}
+# Scatter plot of aDMCs effect size between men and women
+sig.aDMCs<-c(rownames(fs_aDMCs_BIOS),rownames(ms_aDMCs_BIOS),both_sex_aDMCs_BIOS)
+df_aDMCs_effectsize_BIOS<-df_effectsize_linear[sig.aDMCs,]
+df_aDMCs_effectsize_BIOS$aDMCs<-c(rep("female-specific",33),rep("male-specific",1790),rep("both-sex",47))
+save(df_aDMCs_effectsize_BIOS,file="Output_02_aDMCs_effectsize_BIOS.RData")
+
+# the effectsize of ms aDMCs in females is approximately half in males(y=0.26x-0.002).
+df_aDMCs_effectsize_BIOS$aDMCs<-factor(df_aDMCs_effectsize_BIOS$aDMCs,levels = unique(df_aDMCs_effectsize_BIOS$aDMCs))
+
+tiff("Output_02_Comparison of aDMCs size effect between sex.tiff", units="in", width=16, height=13, res=600,compression = 'lzw')
+ggplot(df_aDMCs_effectsize_BIOS) +
+    aes(x = males,y = females,color=aDMCs) +
+     geom_point(size = 4, alpha = 0.5) +
+     geom_vline(aes(xintercept=0)) +
+     geom_hline(aes(yintercept=0)) +
+     geom_abline(slope=1, intercept = 0)+
+  scale_x_continuous(limits=c(-0.04, 0.04))+
+  scale_y_continuous(limits=c(-0.04, 0.04))+
+  scale_color_manual(values = c("#F08080", "#56B4E9", "#32CD32"))+
+  theme_bw()+
+  geom_smooth(data=subset(df_aDMCs_effectsize_BIOS,aDMCs=="male-specific"|aDMCs=="both-sex"),formula = y ~ x,aes(x =males,y = females),method ="lm",colour="red",size=0.7,se = F)+
+  theme(legend.position = "bottom",legend.text =element_text(size = 34),legend.title = element_text(size = 34),axis.title.x = element_text(size = 34),axis.title.y = element_text(size = 34),axis.text.x = element_text(size = 34),axis.text.y = element_text(size = 34))+
+    labs(x="Males effect size",y="Females effect size") 
+dev.off()
+```
+
+```{r}
+# Scatter plot of aDMCs standard error between men and women
+df_aDMCs_se_BIOS<-df_se_linear[sig.aDMCs,]
+df_aDMCs_se_BIOS$aDMCs<-c(rep("female-specific",33),rep("male-specific",1790),rep("both-sex",47))
+save(df_aDMCs_se_BIOS,file ="Output_02_aDMCs_se_BIOS.RData")
+
+df_aDMCs_se_BIOS$aDMCs<-factor(df_aDMCs_se_BIOS$aDMCs,levels = unique(df_aDMCs_se_BIOS$aDMCs))
+
+tiff("Output_02_Comparison of aDMCs se between sex.tiff", units="in", width=16, height=13, res=600,compression = 'lzw')
+ggplot(df_aDMCs_se_BIOS) +
+    aes(x = males,y = females,color=aDMCs) +
+     geom_point(size = 4, alpha = 0.5) +
+     geom_abline(slope=1, intercept = 0)+
+  scale_x_continuous(limits=c(0.001, 0.008))+
+  scale_y_continuous(limits=c(0.001, 0.008))+
+  scale_color_manual(values = c("#F08080", "#56B4E9", "#32CD32"))+
+  theme_bw()+
+  theme(legend.position = "bottom",legend.text =element_text(size = 34),legend.title = element_text(size = 34),axis.title.x = element_text(size = 34),axis.title.y = element_text(size = 34),axis.text.x = element_text(size = 34),axis.text.y = element_text(size = 34))+
+    labs(x="Males standard error",y="Females standard error") 
+dev.off()
+```
+
+
+
+
+
+
+
+
