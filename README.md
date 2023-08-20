@@ -2,7 +2,7 @@
 This repository contains the scripts (R Markdown files) that were used for the analyses accompanying the manuscript "The inactive X chromosome accumulates widespread epigenetic variability with age".
 
 In this manuscript, we systematic annotated, interpretated of age-related differences in DNA methylation at the X chromosome at the level of both differences in mean (age-related differentially methylated CpGs, aDMCs) and differences in variability (age-related variably methylated CpGs, aVMCs).
-### Examples of aDMCs and aVMCs detected in our analysis
+#### Examples of aDMCs and aVMCs detected in our analysis
 ![](https://github.com/YunfengLUMC/Epigenetic_variability_chrX/blob/main/Examples%20of%20aDMCs%20and%20aVMCs.jpg)
 
 The scripts were run in order (from 1 to 10). The purpose of each script is as follows:
