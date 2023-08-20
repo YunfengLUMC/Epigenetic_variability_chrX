@@ -5,7 +5,7 @@ In this manuscript, we systematic annotated, interpretated of age-related differ
 
 The scripts were run in order (from 1 to 10). The purpose of each script is as follows:
 
-[Script 1: Prepare X-chromosome methylation data from BIOS biobank](https://github.com/YunfengLUMC/Epigenetic_variability_chrX/blob/main/Script_01_Xmethdata%20preparation.Rmd)
+- [Script 1: Prepare X-chromosome methylation data from BIOS biobank](https://github.com/YunfengLUMC/Epigenetic_variability_chrX/blob/main/Script_01_Xmethdata%20preparation.Rmd)
 
 [Script 2: aDMCs identification by double generalized linear model (DGLM)](https://github.com/YunfengLUMC/Epigenetic_variability_chrX/blob/main/Script_02_aDMCs_identification_dglm.Rmd)
 
