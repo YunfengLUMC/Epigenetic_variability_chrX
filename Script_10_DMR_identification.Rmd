@@ -1,5 +1,5 @@
 ---
-title: "Script_10_DMR_identification"
+title: "DMR_identification"
 author: "Yunfeng"
 date: "1/16/2023"
 output: html_document
