@@ -1,5 +1,5 @@
 ---
-title: "Script_09_Association with gene expression"
+title: "Association with gene expression"
 author: "Yunfeng"
 date: "1/16/2023"
 output: html_document
