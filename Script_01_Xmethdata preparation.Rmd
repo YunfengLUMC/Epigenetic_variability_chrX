@@ -56,7 +56,7 @@ mvalues_chrX<-mvalues_chrX[,colnames(mvalues_chrX) %in% rownames(col.mvalues.chr
 dim(mvalues_chrX)  #9777 4123
 
 #Remove problem samples.
-#There are 1 covariate which contain certain levels causing singularities if they are included into the model:
+#There is 1 covariate which contain certain levels causing singularities if it is included into the model:
 #sample_plate: levels "OV0192DNA001" and "OV0192DNA002".
 idx <- which(mvalues_chrX$sample_plate == "OV0192DNA001" | mvalues_chrX$sample_plate == "OV0192DNA002")
 
