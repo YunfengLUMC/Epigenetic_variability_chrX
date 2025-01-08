@@ -319,7 +319,7 @@ dev.off()
 
 
 ```{r}
-# The overlap aVMCs between BIOS data and three external datasets.
+# The overlap aVMCs between BIOS data and two external datasets.
 # Females:925
 Overlap_females<-Reduce(intersect, list(rownames(dat_DGLM_Xfemales_bacon_disp),rownames(df_aVMCs_females_Johansson_Blood),rownames(df_aVMCs_females_Reynolds_Mono)))
 dat_aVMCs_females_validated<-dat_DGLM_Xfemales_bacon_disp[Overlap_females,]
